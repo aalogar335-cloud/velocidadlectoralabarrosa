@@ -1,0 +1,2284 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Evaluación Lectora - CEIP La Barrosa</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- jsPDF (descarga de lecturas en PDF) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <!-- Supabase -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                    colors: {
+                        barrosa: {
+                            navy: '#1e3a8a',
+                            navyDark: '#1e293b',
+                            emerald: '#059669',
+                            emeraldLight: '#d1fae5',
+                            gold: '#d97706',
+                            bg: '#f8fafc'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* Custom Styles & Print CSS */
+        body {
+            background-color: #f1f5f9;
+            font-family: 'Inter', sans-serif;
+            color: #1e293b;
+        }
+
+        .word-token {
+            display: inline-block;
+            padding: 2px 5px;
+            margin: 2px 1px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            user-select: none;
+            font-size: 1.25rem;
+            line-height: 1.8;
+        }
+
+        .word-token:hover {
+            background-color: #e2e8f0;
+        }
+
+        .word-token.error {
+            background-color: #fecaca !important;
+            color: #991b1b !important;
+            text-decoration: line-through;
+            font-weight: 600;
+            border: 1px solid #f87171;
+        }
+
+        .word-token.last-read {
+            border-bottom: 3px solid #2563eb !important;
+            background-color: #dbeafe !important;
+            font-weight: bold;
+        }
+
+        .word-token.error.last-read {
+            border-bottom: 3px solid #dc2626 !important;
+            background-color: #fca5a5 !important;
+        }
+
+        /* Printable stylesheet overrides */
+        @media print {
+            .no-print {
+                display: none !important;
+            }
+            .print-only {
+                display: block !important;
+            }
+            body {
+                background-color: #ffffff !important;
+                color: #000000 !important;
+                font-size: 11pt;
+            }
+            .print-card {
+                border: 1px solid #cbd5e1 !important;
+                box-shadow: none !important;
+                page-break-inside: avoid;
+            }
+            @page {
+                margin: 1.5cm;
+                size: portrait;
+            }
+        }
+
+        .print-only {
+            display: none;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between">
+
+    <!-- LOGIN -->
+    <div id="loginOverlay" class="fixed inset-0 z-50 bg-slate-100 flex items-center justify-center p-4 no-print">
+        <div class="bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-sm p-7">
+            <div class="text-center mb-5">
+                <div class="inline-flex bg-barrosa-navy p-3 rounded-xl mb-3"><i class="fa-solid fa-book-open-reader text-2xl text-emerald-400"></i></div>
+                <h2 class="text-xl font-extrabold text-slate-800">Evaluación Lectora</h2>
+                <p class="text-xs text-slate-500">CEIP La Barrosa · Acceso del profesorado</p>
+            </div>
+            <form id="loginForm" onsubmit="Auth.login(event)" class="space-y-3">
+                <div>
+                    <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Usuario</label>
+                    <input type="text" id="loginEmail" required autocomplete="username" autocapitalize="none" spellcheck="false" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Contraseña</label>
+                    <input type="password" id="loginPassword" required autocomplete="current-password" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                </div>
+                <p id="loginError" class="hidden text-xs bg-red-50 text-red-700 border border-red-100 rounded-lg p-2"></p>
+                <button type="submit" id="loginBtn" class="w-full bg-barrosa-navy hover:opacity-90 text-white font-bold py-2.5 rounded-lg transition disabled:opacity-50">Entrar</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- CAMBIAR CONTRASEÑA -->
+    <div id="pwdOverlay" class="hidden fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-4 no-print">
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
+            <h3 class="text-lg font-bold text-slate-800 mb-4">Cambiar contraseña</h3>
+            <form onsubmit="Auth.changePassword(event)" class="space-y-3">
+                <input type="password" id="pwdCurrent" required placeholder="Contraseña actual" autocomplete="current-password" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                <input type="password" id="pwdNew" required minlength="6" placeholder="Nueva contraseña (mín. 6 caracteres)" autocomplete="new-password" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                <input type="password" id="pwdNew2" required minlength="6" placeholder="Repite la nueva contraseña" autocomplete="new-password" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                <p id="pwdError" class="hidden text-xs bg-red-50 text-red-700 border border-red-100 rounded-lg p-2"></p>
+                <div class="flex gap-2 justify-end pt-1">
+                    <button type="button" onclick="Auth.closePwd()" class="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-lg">Cancelar</button>
+                    <button type="submit" id="pwdBtn" class="px-4 py-2 text-sm font-bold bg-barrosa-navy text-white rounded-lg hover:opacity-90 disabled:opacity-50">Guardar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- HEADER -->
+    <header class="bg-barrosa-navy text-white shadow-lg no-print">
+        <div id="userBar" class="hidden max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-3 flex justify-end items-center gap-3 text-xs text-slate-300">
+            <i class="fa-solid fa-user-check text-emerald-400"></i>
+            <span id="userEmail" class="font-semibold"></span>
+            <button onclick="Auth.openPwd()" class="bg-white/10 hover:bg-white/20 border border-white/20 rounded-md px-2.5 py-1 font-semibold transition"><i class="fa-solid fa-key mr-1"></i>Cambiar contraseña</button>
+            <button onclick="Auth.logout()" class="bg-white/10 hover:bg-white/20 border border-white/20 rounded-md px-2.5 py-1 font-semibold transition">Cerrar sesión</button>
+        </div>
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5">
+            <div class="flex flex-col md:flex-row items-center justify-between gap-4">
+                <div class="flex items-center gap-4">
+                    <div class="bg-white/10 p-3 rounded-xl backdrop-blur-md border border-white/20">
+                        <i class="fa-solid fa-book-open-reader text-3xl text-emerald-400"></i>
+                    </div>
+                    <div>
+                        <div class="flex items-center gap-2">
+                            <span class="bg-emerald-500 text-xs font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wide text-white">CEIP La Barrosa</span>
+                            <span class="text-xs text-slate-300 font-medium">Chiclana de la Frontera</span>
+                        </div>
+                        <h1 class="text-2xl sm:text-3xl font-extrabold tracking-tight mt-1">Evaluación Lectora <span class="text-[10px] font-medium text-slate-400 align-middle ml-1 tracking-normal">v.1.9</span></h1>
+                        <p class="text-xs sm:text-sm text-slate-300">Herramienta de Fluidez, Precisión y Comprensión Lectora (3.º a 6.º EP)</p>
+                    </div>
+                </div>
+                <div class="bg-slate-800/80 p-3 rounded-lg border border-slate-700 text-xs max-w-sm text-slate-300">
+                    <p class="font-semibold text-emerald-400 flex items-center gap-1">
+                        <i class="fa-solid fa-scale-balanced"></i> Marco Normativo Andaluz
+                    </p>
+                    <p class="mt-0.5 leading-snug">Decreto 101/2023, Orden de 30 de mayo de 2023 (Currículo de Primaria) e Instrucciones para el Fomento de la Lectura (CCL).</p>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- MAIN CONTAINER -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex-grow w-full">
+
+        <!-- CONFIGURATION CARD -->
+        <section class="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 mb-6 no-print">
+            <h2 class="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+                <i class="fa-solid fa-sliders text-barrosa-navy"></i>
+                1. Datos del Alumnado y Selección del Texto
+            </h2>
+            <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+                <!-- Alumno -->
+                <div class="lg:col-span-2">
+                    <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Nombre del Alumno/a</label>
+                    <input type="text" id="studentName" placeholder="Ej. María García López" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                </div>
+                <!-- Nivel Educativo -->
+                <div>
+                    <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Curso Educativo</label>
+                    <select id="gradeSelect" onchange="app.changeSelection()" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white font-medium text-slate-700">
+                        <option value="3">3.º EP (210-240 pal.)</option>
+                        <option value="4">4.º EP (280-320 pal.)</option>
+                        <option value="5">5.º EP (330-360 pal.)</option>
+                        <option value="6" selected>6.º EP (390-410 pal.)</option>
+                    </select>
+                </div>
+                <!-- Grupo -->
+                <div>
+                    <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Grupo / Clase</label>
+                    <select id="groupSelect" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white">
+                        <option value="A">Grupo A</option>
+                        <option value="B">Grupo B</option>
+                        <option value="C">Grupo C</option>
+                    </select>
+                </div>
+                <!-- Temática -->
+                <div>
+                    <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Temática del Texto</label>
+                    <select id="topicSelect" onchange="app.changeSelection()" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white font-semibold text-emerald-700">
+                        <option value="aventuras">🚀 Aventuras</option>
+                        <option value="misterio">🔍 Misterio</option>
+                        <option value="deportes">⚽ Deportes</option>
+                    </select>
+                </div>
+                <!-- Evaluador -->
+                <div>
+                    <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Docente Evaluador</label>
+                    <input type="text" id="evaluatorName" placeholder="Ej. Tutor/a" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                </div>
+            </div>
+            <!-- Descarga de la lectura seleccionada -->
+            <div class="mt-4 pt-4 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center gap-3">
+                <button id="btnDownloadPdf" onclick="app.downloadReadingPDF()" class="bg-barrosa-navy hover:opacity-90 text-white py-2 px-4 rounded-lg font-bold text-sm transition flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-file-pdf"></i> Descargar lectura en PDF
+                </button>
+                <label class="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
+                    <input type="checkbox" id="pdfIncludeQuestions" checked class="rounded border-slate-300">
+                    Incluir hoja de preguntas (sin opciones, con líneas para responder)
+                </label>
+                <span class="text-xs text-slate-400">Se descarga el texto del curso y la temática seleccionados.</span>
+            </div>
+        </section>
+
+        <!-- TABS BAR -->
+        <div class="flex border-b border-slate-200 mb-6 no-print space-x-2">
+            <button id="tabBtnReading" onclick="app.switchTab('reading')" class="py-3 px-5 font-bold text-sm border-b-2 border-barrosa-navy text-barrosa-navy flex items-center gap-2 rounded-t-lg bg-white shadow-sm">
+                <i class="fa-solid fa-stopwatch text-emerald-600"></i>
+                Prueba de Lectura (Fluidez)
+            </button>
+            <button id="tabBtnQuiz" onclick="app.switchTab('quiz')" class="py-3 px-5 font-medium text-sm text-slate-500 hover:text-slate-700 flex items-center gap-2 rounded-t-lg">
+                <i class="fa-solid fa-circle-question text-blue-600"></i>
+                Comprensión Lectora (<span id="tabQuizCount">5</span> Preguntas)
+            </button>
+            <button id="tabBtnReport" onclick="app.switchTab('report')" class="py-3 px-5 font-medium text-sm text-slate-500 hover:text-slate-700 flex items-center gap-2 rounded-t-lg">
+                <i class="fa-solid fa-file-invoice text-purple-600"></i>
+                Informe y Diagnóstico
+            </button>
+            <button id="tabBtnSaved" onclick="app.switchTab('saved')" class="py-3 px-5 font-medium text-sm text-slate-500 hover:text-slate-700 flex items-center gap-2 rounded-t-lg">
+                <i class="fa-solid fa-folder-open text-amber-600"></i>
+                Mis pruebas
+            </button>
+        </div>
+
+        <!-- SECTION 1: LECTURA INTERACTIVA -->
+        <section id="tabReading" class="grid grid-cols-1 lg:grid-cols-3 gap-6 no-print">
+            <!-- Left Panel: Text & Interactive Area -->
+            <div class="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex flex-col justify-between">
+                <div>
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-100 pb-4 mb-4 gap-2">
+                        <div>
+                            <span id="textCategoryBadge" class="bg-blue-100 text-blue-800 text-xs font-bold px-2.5 py-1 rounded-md uppercase">Aventuras - 6.º EP</span>
+                            <h3 id="textTitleDisplay" class="text-xl font-bold text-slate-900 mt-1">Título del Texto</h3>
+                        </div>
+                        <div class="text-xs text-slate-500 bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200">
+                            Total palabras: <span id="textTotalWordsCount" class="font-bold text-slate-800">0</span>
+                        </div>
+                    </div>
+
+                    <!-- Instructions Banner -->
+                    <div class="bg-amber-50 border-l-4 border-amber-400 p-3 mb-4 rounded-r-md text-xs text-amber-900 flex items-start gap-2">
+                        <i class="fa-solid fa-lightbulb text-amber-500 mt-0.5 text-sm"></i>
+                        <div>
+                            <strong>Instrucciones para el evaluador/a:</strong>
+                            Pulse <em>"Iniciar Tiempo"</em> cuando el alumno empiece a leer. 
+                            Haga <strong>clic en una palabra</strong> si comete un error de lectura. 
+                            Haga <strong>doble clic o clic en la bandera</strong> en una palabra para marcar la <u>última palabra leída</u>.
+                        </div>
+                    </div>
+
+                    <!-- Interactive Reading Box -->
+                    <div id="readingTextBox" class="bg-slate-50 border border-slate-200 rounded-xl p-5 min-h-[260px] text-justify leading-relaxed">
+                        <!-- Dynamic words injected here -->
+                    </div>
+                </div>
+
+                <div class="mt-6 pt-4 border-t border-slate-100 flex flex-wrap items-center justify-between text-xs text-slate-500 gap-2">
+                    <div class="flex items-center gap-4">
+                        <span class="flex items-center gap-1.5"><span class="w-3 h-3 bg-red-200 border border-red-400 rounded"></span> Error (Tachado)</span>
+                        <span class="flex items-center gap-1.5"><span class="w-3 h-3 bg-blue-200 border-b-2 border-blue-600 rounded"></span> Última Palabra</span>
+                    </div>
+                    <div>
+                        Palabras leídas: <strong id="wordsReadDisplay" class="text-slate-800 font-bold text-sm">0</strong>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Panel: Timer, Error Tally & Live Metrics -->
+            <div class="space-y-6">
+                <!-- TIMER CARD -->
+                <div class="bg-slate-900 text-white rounded-2xl p-6 shadow-md border border-slate-800">
+                    <div class="flex items-center justify-between mb-3">
+                        <span class="text-xs font-semibold uppercase tracking-wider text-slate-400">Control de Tiempo</span>
+                        <div class="flex items-center gap-2">
+                            <label class="text-xs text-slate-300">Modo:</label>
+                            <select id="timerMode" onchange="app.setTimerMode()" class="bg-slate-800 text-white text-xs border border-slate-700 rounded px-2 py-1 font-medium">
+                                <option value="free">Lectura Completa</option>
+                                <option value="60">1 Minuto (60s)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Stopwatch Display -->
+                    <div class="text-center py-4">
+                        <span id="timerDisplay" class="text-5xl font-mono font-extrabold tracking-tight text-emerald-400">00:00</span>
+                        <p id="timerSubtext" class="text-xs text-slate-400 mt-1">Tiempo de lectura acumulado</p>
+                    </div>
+
+                    <!-- Control Buttons -->
+                    <div class="grid grid-cols-2 gap-2 mt-2">
+                        <button id="btnStartTimer" onclick="app.startTimer()" class="bg-emerald-600 hover:bg-emerald-500 text-white py-2 px-3 rounded-lg font-bold text-sm transition flex items-center justify-center gap-1.5">
+                            <i class="fa-solid fa-play"></i> Iniciar
+                        </button>
+                        <button id="btnPauseTimer" onclick="app.pauseTimer()" class="bg-amber-600 hover:bg-amber-500 text-white py-2 px-3 rounded-lg font-bold text-sm transition flex items-center justify-center gap-1.5" disabled>
+                            <i class="fa-solid fa-pause"></i> Pausa
+                        </button>
+                        <button id="btnFinishTimer" onclick="app.finishTimer()" class="bg-rose-600 hover:bg-rose-500 text-white py-2 px-3 rounded-lg font-bold text-sm transition flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                            <i class="fa-solid fa-flag-checkered"></i> Finalizar
+                        </button>
+                        <button id="btnResetTimer" onclick="app.resetTimer()" class="bg-slate-700 hover:bg-slate-600 text-white py-2 px-3 rounded-lg font-bold text-sm transition flex items-center justify-center gap-1.5">
+                            <i class="fa-solid fa-rotate-left"></i> Reiniciar
+                        </button>
+                    </div>
+                </div>
+
+                <!-- ERROR TYPE CLASSIFICATION PANEL -->
+                <div class="bg-white rounded-2xl p-5 shadow-sm border border-slate-200">
+                    <div class="flex items-center justify-between mb-3">
+                        <h4 class="font-bold text-slate-800 text-sm flex items-center gap-2">
+                            <i class="fa-solid fa-tags text-amber-500"></i> Tipología de Errores
+                        </h4>
+                        <span id="totalErrorsBadge" class="bg-red-100 text-red-700 text-xs font-bold px-2.5 py-0.5 rounded-full">0 errores</span>
+                    </div>
+
+                    <div class="space-y-3">
+                        <!-- Sustituciones -->
+                        <div class="flex items-center justify-between text-xs p-2 rounded-lg bg-slate-50 border border-slate-100">
+                            <div>
+                                <p class="font-bold text-slate-700">Sustituciones</p>
+                                <p class="text-[10px] text-slate-500">Cambia una palabra o letra</p>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <button onclick="app.changeErrorType('sub', -1)" class="w-6 h-6 bg-slate-200 hover:bg-slate-300 rounded font-bold text-slate-700">-</button>
+                                <span id="countSub" class="font-bold text-slate-800 w-4 text-center">0</span>
+                                <button onclick="app.changeErrorType('sub', 1)" class="w-6 h-6 bg-red-100 hover:bg-red-200 rounded font-bold text-red-700">+</button>
+                            </div>
+                        </div>
+
+                        <!-- Omisiones -->
+                        <div class="flex items-center justify-between text-xs p-2 rounded-lg bg-slate-50 border border-slate-100">
+                            <div>
+                                <p class="font-bold text-slate-700">Omisiones</p>
+                                <p class="text-[10px] text-slate-500">Omite letras o palabras</p>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <button onclick="app.changeErrorType('omi', -1)" class="w-6 h-6 bg-slate-200 hover:bg-slate-300 rounded font-bold text-slate-700">-</button>
+                                <span id="countOmi" class="font-bold text-slate-800 w-4 text-center">0</span>
+                                <button onclick="app.changeErrorType('omi', 1)" class="w-6 h-6 bg-red-100 hover:bg-red-200 rounded font-bold text-red-700">+</button>
+                            </div>
+                        </div>
+
+                        <!-- Adiciones -->
+                        <div class="flex items-center justify-between text-xs p-2 rounded-lg bg-slate-50 border border-slate-100">
+                            <div>
+                                <p class="font-bold text-slate-700">Adiciones</p>
+                                <p class="text-[10px] text-slate-500">Añade elementos no presentes</p>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <button onclick="app.changeErrorType('adi', -1)" class="w-6 h-6 bg-slate-200 hover:bg-slate-300 rounded font-bold text-slate-700">-</button>
+                                <span id="countAdi" class="font-bold text-slate-800 w-4 text-center">0</span>
+                                <button onclick="app.changeErrorType('adi', 1)" class="w-6 h-6 bg-red-100 hover:bg-red-200 rounded font-bold text-red-700">+</button>
+                            </div>
+                        </div>
+
+                        <!-- Vacilaciones / Silabeo -->
+                        <div class="flex items-center justify-between text-xs p-2 rounded-lg bg-slate-50 border border-slate-100">
+                            <div>
+                                <p class="font-bold text-slate-700">Vacilación / Silabeo</p>
+                                <p class="text-[10px] text-slate-500">Dudas o paradas indebidas</p>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <button onclick="app.changeErrorType('vac', -1)" class="w-6 h-6 bg-slate-200 hover:bg-slate-300 rounded font-bold text-slate-700">-</button>
+                                <span id="countVac" class="font-bold text-slate-800 w-4 text-center">0</span>
+                                <button onclick="app.changeErrorType('vac', 1)" class="w-6 h-6 bg-red-100 hover:bg-red-200 rounded font-bold text-red-700">+</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- LIVE QUICK STATS -->
+                <div class="bg-gradient-to-br from-barrosa-navy to-slate-800 text-white rounded-2xl p-5 shadow-sm">
+                    <h4 class="text-xs uppercase tracking-wider font-semibold text-slate-300 mb-3">Métricas en Directo</h4>
+                    <div class="grid grid-cols-2 gap-3 text-center">
+                        <div class="bg-white/10 p-2.5 rounded-xl backdrop-blur-sm">
+                            <span class="text-[10px] text-slate-300 block uppercase font-medium">PPM Brutas</span>
+                            <span id="livePpmGross" class="text-xl font-extrabold text-white">0</span>
+                        </div>
+                        <div class="bg-white/10 p-2.5 rounded-xl backdrop-blur-sm">
+                            <span class="text-[10px] text-slate-300 block uppercase font-medium">PPM Netas</span>
+                            <span id="livePpmNet" class="text-xl font-extrabold text-emerald-400">0</span>
+                        </div>
+                        <div class="bg-white/10 p-2.5 rounded-xl backdrop-blur-sm">
+                            <span class="text-[10px] text-slate-300 block uppercase font-medium">Precisión</span>
+                            <span id="liveAccuracy" class="text-xl font-extrabold text-blue-300">100%</span>
+                        </div>
+                        <div class="bg-white/10 p-2.5 rounded-xl backdrop-blur-sm">
+                            <span class="text-[10px] text-slate-300 block uppercase font-medium">Nivel Estimado</span>
+                            <span id="liveLevel" class="text-xs font-bold text-amber-300 block mt-1">Sin evaluar</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION 2: COMPRENSIÓN LECTORA -->
+        <section id="tabQuiz" class="hidden no-print">
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-100 pb-4 mb-6">
+                    <div>
+                        <span class="bg-purple-100 text-purple-800 text-xs font-bold px-2.5 py-1 rounded-md uppercase">Cuestionario Oficial</span>
+                        <h3 class="text-xl font-bold text-slate-900 mt-1">Evaluación de la Comprensión Lectora</h3>
+                        <p class="text-xs text-slate-500 mt-0.5">Preguntas abiertas: el alumno responde en papel y el docente valora cada respuesta comparándola con la respuesta esperada (Correcta = 1, Parcial = 0,5, Incorrecta = 0).</p>
+                    </div>
+                    <div class="text-right mt-2 sm:mt-0">
+                        <span id="quizScoreBadge" class="bg-slate-100 text-slate-800 text-sm font-extrabold px-3 py-1.5 rounded-lg border border-slate-200">
+                            Puntuación: <span id="quizScoreText" class="text-purple-700">0 / 5 (0%)</span>
+                        </span>
+                    </div>
+                </div>
+
+                <div id="quizQuestionsContainer" class="space-y-6">
+                    <!-- Questions injected dynamically -->
+                </div>
+
+                <div class="mt-8 pt-4 border-t border-slate-100 flex justify-end">
+                    <button onclick="app.switchTab('report')" class="bg-barrosa-navy hover:bg-slate-800 text-white font-bold py-2.5 px-6 rounded-xl transition flex items-center gap-2">
+                        Ver Informe Diagnóstico Completo <i class="fa-solid fa-arrow-right"></i>
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION 3: INFORME Y DIAGNÓSTICO -->
+        <!-- SECTION 4: MIS PRUEBAS GUARDADAS -->
+        <section id="tabSaved" class="hidden no-print">
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                    <div>
+                        <h3 class="text-lg font-bold text-slate-800">Mis pruebas guardadas</h3>
+                        <p class="text-xs text-slate-500">Solo tú puedes ver las pruebas de tu cuenta.</p>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-2">
+                        <input type="text" id="savedSearch" oninput="Auth.renderSaved()" placeholder="Buscar alumno/a..." class="px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                        <button onclick="Auth.exportCSV()" class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2 px-3 rounded-lg text-sm flex items-center gap-2"><i class="fa-solid fa-file-csv"></i> Exportar CSV</button>
+                        <button onclick="Auth.downloadReports()" class="bg-barrosa-navy hover:opacity-90 text-white font-bold py-2 px-3 rounded-lg text-sm flex items-center gap-2"><i class="fa-solid fa-file-pdf"></i> Todos los informes (PDF)</button>
+                    </div>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm text-left">
+                        <thead class="text-xs uppercase text-slate-500 bg-slate-50">
+                            <tr>
+                                <th class="px-3 py-2">Fecha</th><th class="px-3 py-2">Alumno/a</th><th class="px-3 py-2">Curso</th><th class="px-3 py-2">Texto</th>
+                                <th class="px-3 py-2 text-right">PPM netas</th><th class="px-3 py-2 text-right">Precisión</th><th class="px-3 py-2 text-right">Comprensión</th><th class="px-3 py-2">Nivel</th><th class="px-3 py-2"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="savedBody"></tbody>
+                    </table>
+                </div>
+                <p id="savedEmpty" class="text-sm text-slate-400 text-center py-8">Cargando...</p>
+            </div>
+        </section>
+
+        <section id="tabReport" class="hidden">
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 sm:p-8 print-card">
+                
+                <!-- PRINT HEADER ONLY -->
+                <div class="print-only border-b-2 border-slate-800 pb-4 mb-6">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h1 class="text-xl font-black uppercase text-slate-900">CEIP La Barrosa - Chiclana de la Frontera</h1>
+                            <p class="text-xs font-bold text-slate-700">Informe Técnico de Evaluación de la Competencia Lectora (CCL)</p>
+                            <p class="text-[10px] text-slate-500">Enmarcado en el Decreto 101/2023 y la Orden de 30 de mayo de 2023 (Junta de Andalucía)</p>
+                        </div>
+                        <div class="text-right text-xs">
+                            <p><strong>Fecha:</strong> <span class="reportDatePrint">--/--/----</span></p>
+                            <p><strong>Curso:</strong> <span class="reportGradePrint">-º EP</span></p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Screen Header with Print Button -->
+                <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-100 pb-5 mb-6 no-print">
+                    <div>
+                        <span class="bg-emerald-100 text-emerald-800 text-xs font-bold px-2.5 py-1 rounded-md uppercase">Informe Individual</span>
+                        <h3 class="text-2xl font-black text-slate-900 mt-1">Dictamen de Evaluación Lectora</h3>
+                        <p class="text-xs text-slate-500">Métricas cuantitativas, nivel estandarizado andaluz y orientación pedagógica.</p>
+                    </div>
+                    <div class="flex flex-wrap gap-2 no-print">
+                        <button id="btnSaveTest" onclick="Auth.saveTest()" class="bg-barrosa-navy hover:opacity-90 text-white font-bold py-2.5 px-5 rounded-xl shadow transition flex items-center gap-2 disabled:opacity-50">
+                            <i class="fa-solid fa-cloud-arrow-up"></i> Guardar en mi cuenta
+                        </button>
+                        <button onclick="app.newStudent()" class="bg-amber-500 hover:bg-amber-400 text-white font-bold py-2.5 px-5 rounded-xl shadow transition flex items-center gap-2">
+                            <i class="fa-solid fa-user-plus"></i> Nuevo alumno/a
+                        </button>
+                        <button onclick="window.print()" class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2.5 px-5 rounded-xl shadow transition flex items-center gap-2">
+                            <i class="fa-solid fa-print"></i> Imprimir Informe / Guardar PDF
+                        </button>
+                    </div>
+                </div>
+
+                <!-- STUDENT INFORMATION SUMMARY GRID -->
+                <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 mb-6">
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
+                        <div>
+                            <span class="text-slate-500 uppercase font-semibold text-[10px] block">Alumno/a</span>
+                            <strong id="repStudentName" class="text-slate-800 text-sm font-bold">---</strong>
+                        </div>
+                        <div>
+                            <span class="text-slate-500 uppercase font-semibold text-[10px] block">Curso y Grupo</span>
+                            <strong id="repGradeGroup" class="text-slate-800 text-sm font-bold">---</strong>
+                        </div>
+                        <div>
+                            <span class="text-slate-500 uppercase font-semibold text-[10px] block">Texto Evaluado</span>
+                            <strong id="repTextTitle" class="text-slate-800 text-sm font-bold">---</strong>
+                        </div>
+                        <div>
+                            <span class="text-slate-500 uppercase font-semibold text-[10px] block">Docente Evaluador</span>
+                            <strong id="repEvaluator" class="text-slate-800 text-sm font-bold">---</strong>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- METRICS METERS DASHBOARD -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+                    <!-- PPM NETAS -->
+                    <div class="bg-blue-50 border border-blue-200 p-4 rounded-xl text-center">
+                        <span class="text-xs font-bold uppercase text-blue-800 block">Fluidez (PPM Netas)</span>
+                        <span id="repPpmNet" class="text-3xl font-extrabold text-blue-900 my-1 block">0</span>
+                        <span id="repPpmBadge" class="inline-block bg-blue-200 text-blue-800 text-[11px] font-bold px-2 py-0.5 rounded">Medio</span>
+                    </div>
+
+                    <!-- PRECISIÓN -->
+                    <div class="bg-emerald-50 border border-emerald-200 p-4 rounded-xl text-center">
+                        <span class="text-xs font-bold uppercase text-emerald-800 block">Precisión Lectora</span>
+                        <span id="repAccuracy" class="text-3xl font-extrabold text-emerald-900 my-1 block">0%</span>
+                        <span id="repAccuracyBadge" class="inline-block bg-emerald-200 text-emerald-800 text-[11px] font-bold px-2 py-0.5 rounded">---</span>
+                    </div>
+
+                    <!-- COMPRENSIÓN -->
+                    <div class="bg-purple-50 border border-purple-200 p-4 rounded-xl text-center">
+                        <span class="text-xs font-bold uppercase text-purple-800 block">Comprensión</span>
+                        <span id="repComp" class="text-3xl font-extrabold text-purple-900 my-1 block">0%</span>
+                        <span id="repCompBadge" class="inline-block bg-purple-200 text-purple-800 text-[11px] font-bold px-2 py-0.5 rounded">0 / 5 Aciertos</span>
+                    </div>
+
+                    <!-- ÍNDICE DE EFICIENCIA LECTORA (IEL) -->
+                    <div class="bg-amber-50 border border-amber-200 p-4 rounded-xl text-center">
+                        <span class="text-xs font-bold uppercase text-amber-800 block">Índice Eficiencia (IEL)</span>
+                        <span id="repIEL" class="text-3xl font-extrabold text-amber-900 my-1 block">0</span>
+                        <span class="text-[10px] text-amber-700 block">(PPM Netas x Comprensión%)</span>
+                    </div>
+                </div>
+
+                <!-- DIAGNOSTIC EVALUATION & ANDALUSIAN BAREMOS -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                    <!-- Qualitative Assessment -->
+                    <div class="border border-slate-200 rounded-xl p-5 bg-white">
+                        <h4 class="font-bold text-slate-800 text-sm mb-3 flex items-center gap-2 border-b border-slate-100 pb-2">
+                            <i class="fa-solid fa-stethoscope text-blue-600"></i>
+                            Diagnóstico Cualitativo de Fluidez
+                        </h4>
+                        <div class="space-y-2 text-xs text-slate-700">
+                            <p><strong>Clasificación según baremo andaluz:</strong> <span id="repQualitativeLevel" class="font-bold text-slate-900">---</span></p>
+                            <p id="repQualitativeDesc" class="leading-relaxed text-slate-600">---</p>
+                        </div>
+
+                        <div class="mt-4 pt-3 border-t border-slate-100">
+                            <h5 class="font-bold text-slate-800 text-xs mb-2">Desglose de Errores Registrados:</h5>
+                            <div class="grid grid-cols-2 gap-2 text-xs">
+                                <div class="bg-slate-50 p-2 rounded border border-slate-100">Sustituciones: <strong id="repSub">0</strong></div>
+                                <div class="bg-slate-50 p-2 rounded border border-slate-100">Omisiones: <strong id="repOmi">0</strong></div>
+                                <div class="bg-slate-50 p-2 rounded border border-slate-100">Adiciones: <strong id="repAdi">0</strong></div>
+                                <div class="bg-slate-50 p-2 rounded border border-slate-100">Vacilaciones: <strong id="repVac">0</strong></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Pedagogical Recommendations -->
+                    <div class="border border-slate-200 rounded-xl p-5 bg-white">
+                        <h4 class="font-bold text-slate-800 text-sm mb-3 flex items-center gap-2 border-b border-slate-100 pb-2">
+                            <i class="fa-solid fa-graduation-cap text-emerald-600"></i>
+                            Propuesta de Intervención Pedagógica
+                        </h4>
+                        <div id="repPedagogicalRecs" class="text-xs text-slate-700 leading-relaxed space-y-2">
+                            <!-- Recommendations generated dynamically -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- BAREMOS TABLE REFERENCE -->
+                <div class="border border-slate-200 rounded-xl p-4 bg-slate-50 mb-8">
+                    <h5 class="text-xs font-bold text-slate-700 uppercase mb-2">Tabla de Baremos Oficiales de Velodidad Lectora (PPM - Junta de Andalucía)</h5>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-center text-[11px] border-collapse">
+                            <thead>
+                                <tr class="bg-slate-200 text-slate-700 font-bold">
+                                    <th class="p-1.5 text-left">Curso</th>
+                                    <th class="p-1.5 bg-red-100 text-red-800">Muy Bajo</th>
+                                    <th class="p-1.5 bg-amber-100 text-amber-800">Bajo</th>
+                                    <th class="p-1.5 bg-blue-100 text-blue-800">Medio</th>
+                                    <th class="p-1.5 bg-emerald-100 text-emerald-800">Alto</th>
+                                    <th class="p-1.5 bg-purple-100 text-purple-800">Muy Alto</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-200 text-slate-600">
+                                <tr id="rowBaremo3">
+                                    <td class="p-1.5 font-bold text-left">3.º EP</td>
+                                    <td class="p-1.5">&lt; 70</td>
+                                    <td class="p-1.5">70 - 84</td>
+                                    <td class="p-1.5">85 - 99</td>
+                                    <td class="p-1.5">100 - 114</td>
+                                    <td class="p-1.5">&ge; 115</td>
+                                </tr>
+                                <tr id="rowBaremo4">
+                                    <td class="p-1.5 font-bold text-left">4.º EP</td>
+                                    <td class="p-1.5">&lt; 85</td>
+                                    <td class="p-1.5">85 - 99</td>
+                                    <td class="p-1.5">100 - 114</td>
+                                    <td class="p-1.5">115 - 129</td>
+                                    <td class="p-1.5">&ge; 130</td>
+                                </tr>
+                                <tr id="rowBaremo5">
+                                    <td class="p-1.5 font-bold text-left">5.º EP</td>
+                                    <td class="p-1.5">&lt; 100</td>
+                                    <td class="p-1.5">100 - 114</td>
+                                    <td class="p-1.5">115 - 129</td>
+                                    <td class="p-1.5">130 - 144</td>
+                                    <td class="p-1.5">&ge; 145</td>
+                                </tr>
+                                <tr id="rowBaremo6">
+                                    <td class="p-1.5 font-bold text-left">6.º EP</td>
+                                    <td class="p-1.5">&lt; 115</td>
+                                    <td class="p-1.5">115 - 129</td>
+                                    <td class="p-1.5">130 - 144</td>
+                                    <td class="p-1.5">145 - 159</td>
+                                    <td class="p-1.5">&ge; 160</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- SIGNATURE FOOTER FOR PRINTING -->
+                <div class="print-only mt-12 pt-8 border-t border-slate-300">
+                    <div class="grid grid-cols-2 gap-8 text-center text-xs">
+                        <div>
+                            <p class="mb-12 font-semibold text-slate-700">Firma del Tutor/a / Evaluador/a:</p>
+                            <p class="border-t border-slate-400 pt-1 w-2/3 mx-auto text-slate-500">Fdo: <span id="printSigEvaluator">_________________</span></p>
+                        </div>
+                        <div>
+                            <p class="mb-12 font-semibold text-slate-700">Sello del Centro y V.º B.º Dirección:</p>
+                            <p class="border-t border-slate-400 pt-1 w-2/3 mx-auto text-slate-500">CEIP La Barrosa</p>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </section>
+
+    </main>
+
+    <!-- FOOTER -->
+    <footer class="bg-slate-900 text-slate-400 text-xs py-4 border-t border-slate-800 no-print mt-8">
+        <div class="max-w-7xl mx-auto px-4 text-center flex flex-col sm:flex-row justify-between items-center gap-2">
+            <p>© CEIP La Barrosa - Chiclana de la Frontera (Cádiz)</p>
+            <p>Adaptado al currículo andaluz de Educación Primaria (LOMLOE / Decreto 101/2023)</p>
+        </div>
+    </footer>
+
+    <script>
+        /**
+         * Comprehensive Database of 12 complete texts and 60 tailored comprehension questions.
+         */
+        // ===== CONFIGURACIÓN DE SUPABASE (Project Settings > API) =====
+        const SUPABASE_URL = "https://bhrheojwtjfkygruzocg.supabase.co";
+        const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJocmhlb2p3dGpma3lncnV6b2NnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA3OTYwMDUsImV4cCI6MjEwNjM3MjAwNX0.3Qj_8kaxZLGYiYRqz_lr3lApVPcgRHXf-rV_YP0AGF0";
+        // Supabase exige un correo: la app añade este dominio interno al usuario que escribe el docente (ej. "maria" -> maria@lectora-barrosa.com)
+        const USER_EMAIL_DOMAIN = "lectora-barrosa.com";
+
+        const TEXTS_DATABASE = {
+            // ==================== 3.º EDUCACIÓN PRIMARIA (~120-140 palabras) ====================
+            "3": {
+                "aventuras": {
+                    title: "El mapa pirata de Sancti Petri",
+                    text: [
+                        "Lucas caminaba por la orilla de la playa de La Barrosa buscando conchas brillantes para su colección. De repente, una ola fuerte arrastró hasta sus pies una botella de cristal verde con un corcho muy antiguo. [35]",
+                        "Al abrirla con cuidado, descubrió un mapa viejo hecho de papel amarillento. En el centro del dibujo aparecía el famoso islote de Sancti Petri rodeado de pececillos y una gran cruz roja guardada bajo las rocas. [71]",
+                        "Sin pensarlo dos veces, el valiente niño llamó a su hermana Sofía para planear una divertida expedición. Juntos prepararon una mochila con agua, una brújula dorada y muchas ganas de vivir una inolvidable aventura costera. [106]",
+                        "Remaron felices en su pequeña barca sintiendo la brisa marina sobre la cara hasta alcanzar la mágica isla del misterio. [126]"
+                    ],
+                    questions: [
+                        { q: "¿Qué encontró Lucas mientras caminaba por la playa?", options: ["Una moneda de oro", "Una botella de cristal con un mapa", "Un cofre del tesoro abandonado", "Una concha gigante que hablaba"], correct: 1, type: "Literal" },
+                        { q: "¿Por qué llamó Lucas a su hermana Sofía?", options: ["Porque tenía miedo de ir solo", "Para planear juntos una expedición", "Porque se le había perdido la mochila", "Para enseñarle las conchas que encontró"], correct: 1, type: "Inferencial" },
+                        { q: "¿Qué desencadenó la expedición a la isla?", options: ["Encontrar el mapa dentro de la botella", "Ver un barco pirata en el horizonte", "El consejo de su maestro de escuela", "Un anuncio en el periódico local"], correct: 0, type: "Causal" },
+                        { q: "En la frase 'inolvidable aventura', ¿qué significa la palabra 'inolvidable'?", options: ["Que es muy aburrida", "Que se olvida rápidamente", "Que es tan especial que no se puede olvidar", "Que da mucho miedo"], correct: 2, type: "Vocabulario" },
+                        { q: "¿Qué valor demuestra Lucas al compartir el hallazgo con su hermana?", options: ["Egoísmo", "Compañerismo y trabajo en equipo", "Impaciencia", "Desobediencia"], correct: 1, type: "Valorativo" }
+                    ]
+                },
+                "misterio": {
+                    title: "El secreto de la biblioteca",
+                    text: [
+                        "En el colegio de La Barrosa había una puerta al fondo del pasillo que siempre permanecía cerrada con candado. Nadie sabía qué se guardaba allí dentro, aunque a veces se escuchaban suaves susurros por las tardes. [37]",
+                        "Un martes lluvioso durante el recreo, Marta vio que la puerta estaba ligeramente entreabierta y brillaba una luz dorada. Con pasos silenciosos se acercó y descubrió un libro enorme que flotaba sobre una mesa de madera. [72]",
+                        "Las páginas se pasaban solas mostrando dibujos animados de dragones y castillos que cobraban vida al mirarlos. Al tocar la portada, una voz amable le dio la bienvenida a la sala secreta de los cuentos perdidos. [108]",
+                        "Marta sonrió sabiendo que desde aquel momento tendría el mejor rincón mágico para disfrutar de la lectura cada día. [127]"
+                    ],
+                    questions: [
+                        { q: "¿Dónde se encontraba la puerta misteriosa?", options: ["En el patio del colegio", "Al fondo del pasillo del colegio", "En el gimnasio", "En la entrada del comedor"], correct: 1, type: "Literal" },
+                        { q: "¿Por qué entró Marta a la habitación secreta?", options: ["Porque el profesor se lo ordenó", "Porque la puerta estaba entreabierta y vio una luz", "Porque buscaba un balón de fútbol", "Porque sonó el timbre del recreo"], correct: 1, type: "Inferencial" },
+                        { q: "¿Qué provocó que las páginas del libro se movieran?", options: ["El viento que entraba por la ventana", "Una fuerza mágica de la sala secreta", "Marta las estaba soplando", "Un ventilador encendido"], correct: 1, type: "Causal" },
+                        { q: "En el texto, ¿qué significa que los dibujos 'cobraban vida'?", options: ["Que salían del libro y corrían", "Que parecían moverse y tener realidad", "Que estaban dibujados con pintura brillante", "Que hacían mucho ruido"], correct: 1, type: "Vocabulario" },
+                        { q: "¿Qué te parece la actitud de Marta al sentir curiosidad por los libros?", options: ["Mala porque no debía cotillear", "Positiva porque la curiosidad la llevó a descubrir la magia de la lectura", "Insignificante", "Peligrosa para el colegio"], correct: 1, type: "Valorativo" }
+                    ]
+                },
+                "deportes": {
+                    title: "La gran carrera del colegio",
+                    text: [
+                        "El sol de la mañana iluminaba el patio donde todo el colegio se había reunido para la gran carrera anual. Pedro estaba muy nervioso en la línea de salida ajustando los cordones de sus zapatillas deportivas rojas. [38]",
+                        "Al sonar el silbato del maestro de educación física, los corredores salieron velozmente entre los aplausos del público. Durante las dos primeras vueltas al circuito, Pedro se mantuvo en una buena tercera posición sin fatigarse. [72]",
+                        "En el tramo final, su amigo Mateo tropezó con una piedra y cayó al suelo lastimándose un tobillo. Pedro se detuvo de inmediato para ayudarle a levantarse, cruzando juntos la meta apoyados el uno en el otro. [108]",
+                        "Todo el colegio aplaudió con entusiasmo el bonito gesto de deportividad y compañerismo que acababan de presenciar. [125]"
+                    ],
+                    questions: [
+                        { q: "¿De qué color eran las zapatillas de Pedro?", options: ["Azules", "Verdes", "Rojas", "Blancas"], correct: 2, type: "Literal" },
+                        { q: "¿Por qué no ganó Pedro la carrera en primer lugar?", options: ["Porque corría muy despacio", "Porque se paró a ayudar a su amigo caído", "Porque se equivocó de camino", "Porque se le desataron las zapatillas"], correct: 1, type: "Inferencial" },
+                        { q: "¿Qué causó la caída de Mateo durante el tramo final?", options: ["Un empujón de otro corredor", "Que tropezó con una piedra", "El cansancio acumulado", "El cordón de su zapatilla"], correct: 1, type: "Causal" },
+                        { q: "¿Qué significa la palabra 'deportividad' en este cuento?", options: ["Ganar siempre todas las medallas", "Jugar respetando las reglas y ayudando a los compañeros", "Correr lo más rápido posible sin mirar a nadie", "Comprar mucha ropa de deporte"], correct: 1, type: "Vocabulario" },
+                        { q: "¿Qué enseñanza importante nos transmite la decisión de Pedro?", options: ["Que lo único importante es la victoria", "Que la amistad y el auxilio valen más que un trofeo", "Que no se debe correr en grupo", "Que es mejor no participar en carreras"], correct: 1, type: "Valorativo" }
+                    ]
+                }
+            },
+
+            // ==================== 4.º EDUCACIÓN PRIMARIA (~150-170 palabras) ====================
+            "4": {
+                "aventuras": {
+                    title: "El rescate en los pinares de Chiclana",
+                    text: [
+                        "Era una mañana soleada de primavera cuando Elena y su perro Tobías salieron a pasear por el frondoso pinar de La Barrosa. Siguieron un sendero estrecho cubierto de acículas secas hasta llegar a un claro rodeado de altísimos árboles. [41]",
+                        "De pronto, Tobías comenzó a ladrar con insistencia fijando su mirada hacia la copa de un pino centenario. Elena levantó la cabeza y descubrió a un pequeño mochuelo atrapado entre unas cuerdas enganchadas a una rama alta. [77]",
+                        "Sin perder la calma, la niña utilizó una vara larga de madera para enganchar con cuidado el cordel y liberarlo lentamente. El animalito revoloteó alegremente antes de posarse sobre un matorral sano y a salvo de todo peligro. [114]",
+                        "Elena guardó las cuerdas en su mochila para mantener limpio el bosque y regresó a casa muy satisfecha por haber salvado a un animal del entorno natural de su localidad. [144]",
+                        "Aquel día comprendió la importancia de cuidar la fauna autóctona de Andalucía. [156]"
+                    ],
+                    questions: [
+                        { q: "¿Qué animal estaba atrapado en la copa del pino?", options: ["Un ardilla", "Un mochuelo", "Un gato", "Un águila"], correct: 1, type: "Literal" },
+                        { q: "¿Por qué guardó Elena las cuerdas en su mochila?", options: ["Para utilizarlas en su casa", "Para no dejar basura y cuidar el pinar", "Para enseñárselas a sus maestros", "Porque le gustaba coleccionar cuerdas"], correct: 1, type: "Inferencial" },
+                        { q: "¿Qué provocó que Elena descubriera al ave atrapada?", options: ["Los ladridos insistedores de su perro Tobías", "El ruido de las cuerdas", "El canto del mochuelo", "La indicación de un cartel"], correct: 0, type: "Causal" },
+                        { q: "¿Qué son las 'acículas' mencionadas en el primer párrafo?", options: ["Las flores de los matorrales", "Las hojas finas en forma de aguja de los pinos", "Las piñas pequeñas cayeras", "Las rocas del sendero"], correct: 1, type: "Vocabulario" },
+                        { q: "¿Qué valoración merece la actuación de Elena en la naturaleza?", options: ["Negativa porque molestó al mochuelo", "Ejemplar porque protegió a los animales y no contaminó", "Inútil", "Arriesgada e irresponsable"], correct: 1, type: "Valorativo" }
+                    ]
+                },
+                "misterio": {
+                    title: "El enigmas del reloj de la torre",
+                    text: [
+                        "El viejo reloj de la torre del pueblo llevaba más de diez años parado señalando exactamente las tres en punto. Sin embargo, una noche de tormenta, las campanadas volvieron a resonar fuertemente por todas las calles del municipio. [39]",
+                        "Pablo, un niño de cuarto curso muy curioso, decidió investigar el misterio a la mañana siguiente junto a su amiga Clara. Subieron por una escalera de caracol de madera crujiente hasta llegar a la maquinaria secreta de la torre. [78]",
+                        "Allí encontraron a un antiguo relojero jubilado que limpiaba los engranajes de bronce con un paño de terciopelo. El anciano les explicó que había vuelto para reparar el reloj y regalarle de nuevo sus melodías a los vecinos. [116]",
+                        "Los niños se ofrecieron felices a ayudarle cada fin de semana manteniendo vivo el patrimonio de su pueblo. [134]",
+                        "Desde entonces, el reloj suena puntual recordando a todos la magia de la colaboración comunitaria. [149]"
+                    ],
+                    questions: [
+                        { q: "¿Qué hora marcaba siempre el reloj antes de volver a funcionar?", options: ["Las doce en punto", "Las tres en punto", "Las seis y media", "Las nueve de la noche"], correct: 1, type: "Literal" },
+                        { q: "¿Por qué volvió a sonar el reloj la noche de la tormenta?", options: ["Por un rayo que cayó en la torre", "Porque el relojero jubilado había comenzado a repararlo", "Porque Pablo movió las agujas", "Por el fuerte viento"], correct: 1, type: "Inferencial" },
+                        { q: "¿Qué motivó a Pablo y Clara a subir a la torre?", options: ["El miedo a las campanadas", "La curiosidad por saber quién hizo sonar el reloj parado", "Un encargo del alcalde", "Una clase de educación física"], correct: 1, type: "Causal" },
+                        { q: "¿Qué significa la palabra 'patrimonio' en este texto?", options: ["El dinero acumulado", "Los bienes culturales e históricos valiosos de una comunidad", "Los juguetes de los niños", "Las herramientas del taller"], correct: 1, type: "Vocabulario" },
+                        { q: "¿Por qué es positiva la actitud de Pablo y Clara al ofrecer su ayuda?", options: ["Porque aprendieron a reparar relojes gratis", "Porque se interesaron por conservar la historia y tradiciones de su localidad", "Porque evitaban hacer los deberes", "Porque se hicieron famosos"], correct: 1, type: "Valorativo" }
+                    ]
+                },
+                "deportes": {
+                    title: "El torneo de surf en La Barrosa",
+                    text: [
+                        "Las olas de la playa de La Barrosa estaban perfectas para la celebración del campeonato infantil de surf. Niños y niñas de distintos colegios de la comarca esperaban entusiasmados en la arena con sus tablas de colores brillante. [39]",
+                        "Sofía llevaba meses entrenando con constancia los sábados por la mañana sin importar el frío ni el madrugón. Al entrar al agua, remó con fuerza hacia las olas más altas demostrando un equilibrio sorprendente sobre la tabla. [76]",
+                        "Realizó giros suaves y se mantuvo en pie con gran elegancia hasta llegar prácticamente a la orilla del mar. Los jueces le otorgaron la puntuación más alta destacando su impecable técnica y su actitud respetuosa con el resto. [113]",
+                        "Al subir al podio a recoger su medalla, Sofía dedicó el trofeo a su entrenadora y a sus compañeros de equipo. [135]",
+                        "Su esfuerzo constante fue el verdadero secreto de su merecida victoria deportiva. [146]"
+                    ],
+                    questions: [
+                        { q: "¿En qué lugar se celebró el torneo de surf?", options: ["En el pabellón deportivo", "En la playa de La Barrosa", "En la piscina municipal", "En el río Iro"], correct: 1, type: "Literal" },
+                        { q: "¿Por qué consiguió Sofía la mejor puntuación de los jueces?", options: ["Porque tenía la tabla más cara", "Por su técnica impecable, equilibrio y actitud respetuosa", "Because era la más mayor del torneo", "Porque el mar estaba en calma"], correct: 1, type: "Inferencial" },
+                        { q: "¿A qué se debió el éxito de Sofía en la competición?", options: ["A la suerte que tuvo ese día", "A meses de entrenamiento constante y esfuerzo", "A que los demás no sabían nadar", "Al tipo de neopreno que llevaba"], correct: 1, type: "Causal" },
+                        { q: "En la expresión 'entrenando con constancia', ¿qué significa 'constancia'?", options: ["Hacer algo muy de vez en cuando", "Firmereza y perseverancia en el trabajo diario", "Rapidez sin cuidado", "Divertirse sin normas"], correct: 1, type: "Vocabulario" },
+                        { q: "¿Qué demuestra el gesto de Sofía al dedicar el trofeo a su entrenadora y equipo?", options: ["Vanidad", "Gratitud y humildad", "Indiferencia", "Orgullo desmedido"], correct: 1, type: "Valorativo" }
+                    ]
+                }
+            },
+
+            // ==================== 5.º EDUCACIÓN PRIMARIA (~190-220 palabras) ====================
+            "5": {
+                "aventuras": {
+                    title: "Expedición en kayak por las marismas",
+                    text: [
+                        "El grupo de ecología de quinto curso organizó una travesía en kayak por los canales de las marismas de Chiclana. Equipados con chalecos salvavidas y remos ligeros, los escolares se deslizaron sobre las tranquilas aguas rodeados de una vegetación asombrosa. [42]",
+                        "El guía del parque natural les explicó que este ecosistema albergaba especies de aves acuáticas de gran valor como flamencos rosa, espátulas y garzas reales. De repente, una ráfaga de viento cruzado desplazó la embarcación de Álvaro hacia una zona de fango bajo donde quedó encallado. [88]",
+                        "Lejos de entrar en pánico, su compañera Lucía actuó rápidamente aplicando las técnicas de rescate aprendidas en clase. Maniobró su kayak con precisión, le lanzó un cabo resistente y remó enérgicamente hasta devolver la embarcación a la corriente principal del canal. [127]",
+                        "Juntos continuaron el trayecto observando a un bando de flamencos que alzaba el vuelo en un espectáculo único de color y elegancia. Al desembarcar en el muelle de madera, los profesores felicitaron al grupo por su excelente trabajo colaborativo. [166]",
+                        "Aquella aventura en contacto directo con el medio ambiente andaluz les enseñó la valiosa lección de responder con temple y solidaridad ante las dificultades imprevistas de la vida. [195]"
+                    ],
+                    questions: [
+                        { q: "¿Qué especies de aves habitaban en el ecosistema de las marismas según el guía?", options: ["Águilas imperiales y buitres", "Flamencos rosa, espátulas y garzas reales", "Pichones y gaviotas exclusivamente", "Patos silvadores y lechuzas"], correct: 1, type: "Literal" },
+                        { q: "¿Por qué fue fundamental la rápida actuación de Lucía?", options: ["Porque evitó que Álvaro quedara atrapado en el fango y garantizó la seguridad", "Porque querían ganar una carrera de kayaks", "Porque el profesor no estaba presente", "Porque se estaba haciendo de noche"], correct: 0, type: "Inferencial" },
+                        { q: "¿Cuál fue la causa de que el kayak de Álvaro encallara?", options: ["Que rompió el remo de madera", "Una ráfaga de viento cruzado que lo empujó al fango", "Que no llevaba chaleco salvavidas", "Un despiste por ir mirando el teléfono"], correct: 1, type: "Causal" },
+                        { q: "¿Qué significa la expresión 'responder con temple' en el último párrafo?", options: ["Mantener la calma, la serenidad y la firmeza ante un problema", "Gritar con fuerza pidiendo auxilio", "Nadar lo más rápido posible", "Estar enfadado con los compañeros"], correct: 0, type: "Vocabulario" },
+                        { q: "¿Cómo calificarías la actitud de preservación ambiental del grupo de alumnos?", options: ["Muy valiosa porque aprendieron a respetar y valorar el entorno natural de su tierra", "Inadecuada", "Superficial", "Sin importancia para la escuela"], correct: 0, type: "Valorativo" }
+                    ]
+                },
+                "misterio": {
+                    title: "El diario perdido del antiguo castillo",
+                    text: [
+                        "Durante las obras de restauración de una de las torres históricas cercanas a la costa, los obreros hallaron un cofre metálico sepultado tras una pared de piedra. En su interior descansaba un diario manuscrito del siglo dieciocho perteneciente a un antiguo marinero de la bahía. [47]",
+                        "El profesor de historia del colegio llevó una copia digitalizada a la clase de quinto para descifrar sus intrincados textos. Daniel y Carmen se apasionaron con la tarea buscando pistas entre los párrafos desgastados y llenos de símbolos antiguos. [87]",
+                        "Descubrieron que el marino narraba el ocultamiento de una colección de documentos cartográficos que mostraban las rutas comerciales y los arrecifes peligrosos del océano Atlántico. Siguiendo las coordenadas escritas en tinta sepia, los niños dedujeron que los mapas estaban custodiados en el archivo municipal. [131]",
+                        "Gracias a su aguda deducción, los archiveros localizaron los planos históricos, permitiendo restaurarlos para la exposición del museo local. [150]",
+                        "El descubrimiento fue motivo de orgullo para todo el colegio, demostrando que la investigación rigurosa y el entusiasmo por el pasado pueden revelar fascinantes secretos históricos. [178]"
+                    ],
+                    questions: [
+                        { q: "¿Dónde encontraron el cofre metálico con el diario?", options: ["En la playa bajo la arena", "Tras una pared de piedra durante la restauración de una torre", "En el desván del colegio", "En una barca hundida"], correct: 1, type: "Literal" },
+                        { q: "¿Qué contenían los documentos cuya ubicación revelaba el diario?", options: ["Monedas de oro y joyas", "Rutas comerciales y arrecifes peligrosos del Atlántico", "Cuentos de piratas inventados", "Recetas de cocina tradicional"], correct: 1, type: "Inferencial" },
+                        { q: "¿Qué permitió localizar los planos históricos en el archivo municipal?", options: ["La deducción de los niños al descifrar las coordenadas en tinta sepia", "Una llamada telefónica anónima", "Un detector de metales", "La casualidad de un limpiador"], correct: 0, type: "Causal" },
+                        { q: "¿Qué quiere decir la palabra 'manuscrito'?", options: ["Un libro impreso a máquina", "Un texto escrito a mano", "Un dibujo digital", "Un documento destruido"], correct: 1, type: "Vocabulario" },
+                        { q: "¿Por qué es importante el trabajo de investigación que realizaron Daniel y Carmen?", options: ["Porque les ayudó a sacar buenas notas sin estudiar", "Porque contribuyeron a recuperar y poner en valor el patrimonio histórico de su comunidad", "Porque ganaron dinero con los mapas", "Porque destruyeron el diario antiguo"], correct: 1, type: "Valorativo" }
+                    ]
+                },
+                "deportes": {
+                    title: "La final del campeonato de balonmano",
+                    text: [
+                        "El pabellón deportivo municipal registraba un lleno absoluto para presenciar la gran final autonómica de balonmano entre el equipo de Chiclana y el conjunto visitante de Sevilla. El marcador reflejaba un emocionante empate a veinte goles cuando apenas restaba un minuto para el pitido final. [48]",
+                        "La tensión en la pista se palpaba en cada pase rápido y en cada cobertura defensiva de los jugadores. El entrenador local solicitó un tiempo muerto estratégico para diseñar la jugada decisiva del encuentro sobre la pizarra táctica. [86]",
+                        "Indicó que la responsabilidad del lanzamiento recaería en Javier, el extremo izquierdo que había destacado por su precisión durante toda la temporada. Al reanudarse el juego, sus compañeros movieron el balón con fluidez hasta encontrar el espacio idóneo para el pase. [126]",
+                        "Javier saltó con potencia superando la barrera defensiva y lanzó un tiro potente pegado al poste contra el que nada pudo hacer el guardameta rival. La bocina sonó proclamando al equipo local campeón entre la euforia desbordante del público asistente. [166]",
+                        "Más allá de la victoria, ambos conjuntos se saludaron deportivamente en el centro del terreno de juego dando un ejemplo maduro de respeto mutuo y deportividad. [194]"
+                    ],
+                    questions: [
+                        { q: "¿Qué equipos disputaban la final autonómica de balonmano?", options: ["Chiclana y Cádiz", "Chiclana y Sevilla", "Málaga y Sevilla", "Chiclana y Córdoba"], correct: 1, type: "Literal" },
+                        { q: "¿Por qué solicitó el entrenador local un tiempo muerto estratégico?", options: ["Porque sus jugadores estaban cansados", "Para diseñar la jugada decisiva del encuentro en la pizarra", "Para protestar al árbitro", "Para cambiar al portero"], correct: 1, type: "Inferencial" },
+                        { q: "¿Qué motivó que el lanzamiento final recayera en Javier?", options: ["Que era el capitán del equipo", "Su destacada precisión durante toda la temporada", "Que era el jugador más alto", "Fue una decisión al azar"], correct: 1, type: "Causal" },
+                        { q: "¿Qué significa la palabra 'euforia' en el texto?", options: ["Estado de gran alegría, entusiasmo y optimismo", "Tristeza profunda y decepción", "Miedo e incertidumbre", "Cansancio extremo"], correct: 0, type: "Vocabulario" },
+                        { q: "¿Qué aspecto destaca positivamente al término del partido además del resultado?", options: ["El precio de las entradas", "El saludo respetuoso y la deportividad demostrada por ambos equipos", "El ruido del pabellón", "La potencia del lanzamiento"], correct: 1, type: "Valorativo" }
+                    ]
+                }
+            },
+
+            // ==================== 6.º EDUCACIÓN PRIMARIA (~230-260 palabras) ====================
+            "6": {
+                "aventuras": {
+                    title: "El tesoro del faro abandonado",
+                    text: [
+                        "Cuando Álvaro cumplió doce años, su tío Ramón le prometió una aventura de verdad. El sábado a las siete de la mañana, los dos zarparon desde el puerto de Sancti Petri en una pequeña barca azul con motor. Los acompañaba Inés, la hermana mayor de Álvaro, que llevaba una mochila cargada con bocadillos, una linterna y un cuaderno donde apuntaba todo lo que veía. El mar estaba tranquilo y una ligera niebla cubría el horizonte, de modo que la travesía parecía fácil. [82]",
+                        "Después de una hora de navegación, el tío Ramón señaló una silueta oscura entre la bruma. Era el faro de la Isla de las Gaviotas, abandonado desde hacía más de cuarenta años. Según contaban los pescadores, el último farero se había marchado una noche de tormenta sin llevarse sus pertenencias. Nadie se había atrevido a regresar desde entonces, porque las corrientes que rodeaban los islotes eran traicioneras: parecían tranquilas, pero arrastraban a los barcos hacia las rocas sin avisar. [161]",
+                        "Atracaron con mucho cuidado en un pequeño embarcadero de madera medio podrido. Subieron por una escalera de caracol que crujía a cada paso, mientras Álvaro contaba en voz alta los escalones para no perderse. En la sala principal encontraron una mesa cubierta de polvo y un cajón cerrado con un candado oxidado. Inés lo golpeó con una piedra hasta que cedió. Dentro había un diario de tapas verdes y una llave pequeña de bronce atada con un cordel. [239]",
+                        "El diario explicaba que el farero, un hombre llamado Anselmo, había escondido allí lo más valioso que tenía: las cartas de su familia, algunas fotografías y treinta monedas de plata. Escribió que lo había enterrado a siete pasos de la puerta del faro, justo debajo de la piedra con forma de ancla. Álvaro midió los pasos con ayuda de su tío, mientras Inés buscaba entre las rocas hasta que descubrió una piedra con un ancla casi borrada por la sal y el viento. [322]",
+                        "Cavaron durante veinte minutos y sacaron un cofre de latón. La llave de bronce encajó perfectamente. Dentro estaban las treinta monedas, las cartas, las fotografías y una nota del farero. Decía que las monedas valían poco comparadas con aquellas cartas, porque eran lo único que lo unía a su familia cuando el trabajo lo mantenía lejos de ella. Los tres regresaron a puerto aquella misma tarde y entregaron el cofre al museo del pueblo, donde la nieta de Anselmo lo recibió con lágrimas de emoción. [407]"
+                    ],
+                    questions: [
+                        {
+                                                "type": "Literal",
+                                                "q": "¿Quiénes viajaron en la barca y desde qué lugar zarparon?",
+                                                "expected": "Álvaro, su tío Ramón y su hermana Inés; zarparon desde el puerto de Sancti Petri."
+                        },
+                        {
+                                                "type": "Literal",
+                                                "q": "¿Cuántos años llevaba abandonado el faro y por qué nadie se acercaba a la isla?",
+                                                "expected": "Más de cuarenta años; porque las corrientes eran traicioneras y peligrosas para los barcos."
+                        },
+                        {
+                                                "type": "Literal",
+                                                "q": "¿Qué encontraron dentro del cajón que abrieron con una piedra?",
+                                                "expected": "Un diario de tapas verdes y una llave pequeña de bronce atada con un cordel."
+                        },
+                        {
+                                                "type": "Inferencial",
+                                                "q": "¿Cómo supieron exactamente dónde cavar?",
+                                                "expected": "Siguieron las indicaciones del diario: siete pasos desde la puerta del faro, bajo la piedra con forma de ancla."
+                        },
+                        {
+                                                "type": "Causal",
+                                                "q": "¿Por qué decía el farero que las monedas valían poco comparadas con las cartas?",
+                                                "expected": "Porque las cartas y fotografías eran lo único que lo unía a su familia cuando el trabajo lo mantenía lejos."
+                        },
+                        {
+                                                "type": "Vocabulario",
+                                                "q": "El texto dice que las corrientes eran «traicioneras». ¿Qué significa?",
+                                                "expected": "Que parecían tranquilas pero eran peligrosas e impredecibles, y podían causar un accidente sin avisar."
+                        },
+                        {
+                                                "type": "Valorativo",
+                                                "q": "¿Qué hicieron los protagonistas con el cofre? ¿Te parece una buena decisión? Explica por qué.",
+                                                "expected": "Lo entregaron al museo del pueblo y lo recibió la nieta de Anselmo. Vale cualquier opinión razonada con hechos del texto."
+                        }
+                    ]
+                },
+                "misterio": {
+                    title: "El reloj que se paraba a las 3:17",
+                    text: [
+                        "En el pueblo de Valdeluna, el reloj de la torre llevaba dos meses haciendo algo muy extraño: todos los jueves se detenía exactamente a las 3:17 de la madrugada y no volvía a funcionar hasta el amanecer. Los vecinos murmuraban en la plaza. Algunos aseguraban que la torre estaba encantada y otros creían que alguien gastaba bromas pesadas. El alcalde, cansado de tantos rumores, repetía que solo se trataba de una avería sin importancia. [74]",
+                        "Marta, una niña de once años muy observadora, no se conformaba con esa explicación. Una tarde, junto a su primo Daniel, visitó a la señora Pilar, la relojera del pueblo. La anciana les contó que el mecanismo había sido reparado dos meses atrás por un técnico llamado Gaspar, y que desde aquel día los problemas no habían dejado de repetirse. También les prestó la llave de la puerta de la torre, con la condición de que tuvieran muchísimo cuidado. [153]",
+                        "El miércoles por la noche, los dos primos se quedaron escondidos en la torre con una linterna y un cuaderno. A las 3:17 en punto oyeron tres golpes secos seguidos de un temblor sordo que recorrió las paredes. Al mirar hacia arriba, vieron cómo el péndulo, que hasta ese momento se balanceaba con calma, se agitaba y terminaba parándose. Daniel, asustado, susurró que debía de ser un fantasma. Marta le respondió que los fantasmas no necesitan tornillos ni tuberías y que había que buscar una causa lógica. [240]",
+                        "Marta anotó que los golpes llegaban por una tubería metálica que cruzaba la torre y bajaba hacia el edificio de al lado, el polideportivo municipal. A la mañana siguiente preguntaron al conserje, que les enseñó el programa de la bomba de riego del campo de fútbol. Estaba configurada para ponerse en marcha automáticamente los jueves a las 3:17. Entonces lo comprendieron todo: cuando la bomba arrancaba, la tubería vibraba con fuerza y esas sacudidas frenaban el péndulo del reloj. [319]",
+                        "Los niños contaron el descubrimiento a la señora Pilar y al alcalde, que se quedó sin palabras. Aquella misma semana cambiaron la hora del riego a las seis de la mañana y Gaspar fijó la tubería con unas abrazaderas nuevas. Desde entonces el reloj no volvió a pararse. Daniel reconoció que se había equivocado con lo del fantasma, y Marta sonrió: «Casi todos los misterios tienen explicación; solo hay que observar, apuntar y preguntarse por qué». [395]"
+                    ],
+                    questions: [
+                        {
+                                                "type": "Literal",
+                                                "q": "¿Qué le ocurría al reloj de la torre y en qué momento?",
+                                                "expected": "Se paraba todos los jueves a las 3:17 de la madrugada y no volvía a funcionar hasta el amanecer."
+                        },
+                        {
+                                                "type": "Literal",
+                                                "q": "¿Quién es la señora Pilar y qué información les dio a los primos?",
+                                                "expected": "La relojera del pueblo; les contó que Gaspar reparó el mecanismo dos meses atrás y que desde entonces se repetían los problemas."
+                        },
+                        {
+                                                "type": "Literal",
+                                                "q": "¿Qué ocurrió en la torre a las 3:17 mientras los primos estaban escondidos?",
+                                                "expected": "Se oyeron tres golpes secos y un temblor por las paredes; el péndulo se agitó y se paró."
+                        },
+                        {
+                                                "type": "Causal",
+                                                "q": "¿Cuál era la verdadera causa de que el reloj se parara?",
+                                                "expected": "Una bomba de riego del polideportivo arrancaba los jueves a las 3:17 y hacía vibrar una tubería que frenaba el péndulo."
+                        },
+                        {
+                                                "type": "Inferencial",
+                                                "q": "¿Qué quiso decir Marta con que los fantasmas no necesitan tornillos ni tuberías?",
+                                                "expected": "Que un fantasma no usa objetos materiales, así que la causa debía ser real y lógica, no sobrenatural."
+                        },
+                        {
+                                                "type": "Vocabulario",
+                                                "q": "¿Qué es el péndulo de un reloj?",
+                                                "expected": "La pieza que se balancea de un lado a otro y marca el ritmo del reloj."
+                        },
+                        {
+                                                "type": "Valorativo",
+                                                "q": "¿Qué cualidades de Marta fueron clave para resolver el misterio? Explica tu respuesta.",
+                                                "expected": "Observar, anotar, razonar con lógica y no dejarse llevar por el miedo. Vale cualquier respuesta justificada con el texto."
+                        }
+                    ]
+                },
+                "deportes": {
+                    title: "La final de la liga escolar",
+                    text: [
+                        "El sábado a las diez de la mañana, el equipo de Los Delfines saltó al campo de césped del parque de Chiclana para jugar la final de la liga escolar contra Los Halcones. Lara, la portera, había dormido muy poco por los nervios. Su capitán, Hugo, reunió al equipo en un círculo y les recordó que lo importante era disfrutar y jugar juntos. En las gradas había más de doscientas personas entre familias, profesores y compañeros del colegio. [78]",
+                        "El partido duraba cincuenta minutos, divididos en dos tiempos de veinticinco, y no empezó bien. A los doce minutos, un delantero de Los Halcones aprovechó un despiste de la defensa y marcó el primer gol. La entrenadora, Irene, no se enfadó. Durante el descanso explicó con calma que debían pasar el balón más rápido y que los defensas tenían que hablar más entre sí. Los Delfines salieron a la segunda parte con la cabeza fría y las ideas claras. [157]",
+                        "En el minuto treinta y uno ocurrió lo peor: Lara se lanzó a por un balón difícil y cayó sobre la muñeca derecha. Aunque intentó seguir, el dolor era demasiado fuerte y tuvo que abandonar el campo. Pablo, un compañero que casi nunca jugaba y que jamás había sido portero, se puso los guantes. Lara se sentó en el banquillo con una bolsa de hielo y le gritaba consejos: que mirara siempre el balón y que saliera con valentía. [236]",
+                        "Pablo estaba temblando, pero en pocos minutos detuvo un tiro raso y después un remate de cabeza. El público aplaudió con fuerza. En el minuto cuarenta y siete, Hugo recibió un pase de su amiga Carmen, regateó a dos rivales y marcó el gol del empate. Los Delfines celebraron abrazados y el partido terminó 1-1, así que la final debía decidirse en una tanda de penaltis, que es una serie de lanzamientos desde once metros de la portería. [314]",
+                        "Cada equipo lanzó cinco penaltis. Pablo adivinó la esquina y paró el tercero de Los Halcones, y Los Delfines ganaron finalmente por 4 a 3. Al recoger el trofeo, Hugo se lo entregó a Pablo para que lo levantara. Pablo, colorado, dijo que el mérito era de todos y, sobre todo, de Lara, que le había enseñado a perder el miedo. Lara, con la muñeca vendada, sonrió y levantó el pulgar desde el banquillo. [388]"
+                    ],
+                    questions: [
+                        {
+                                                "type": "Literal",
+                                                "q": "¿Contra qué equipo jugaban Los Delfines y dónde se celebraba la final?",
+                                                "expected": "Contra Los Halcones, en el campo de césped del parque de Chiclana."
+                        },
+                        {
+                                                "type": "Literal",
+                                                "q": "¿Qué les dijo la entrenadora Irene durante el descanso?",
+                                                "expected": "Que debían pasar el balón más rápido y que los defensas tenían que comunicarse más."
+                        },
+                        {
+                                                "type": "Literal",
+                                                "q": "¿Qué le pasó a Lara y quién la sustituyó?",
+                                                "expected": "Se cayó sobre la muñeca derecha y tuvo que dejar el campo; la sustituyó Pablo, que nunca había sido portero."
+                        },
+                        {
+                                                "type": "Inferencial",
+                                                "q": "¿Cómo ayudó Lara al equipo aunque no podía jugar?",
+                                                "expected": "Desde el banquillo animó y aconsejó a Pablo (mirar el balón, salir con valentía), ayudándole a perder el miedo."
+                        },
+                        {
+                                                "type": "Causal",
+                                                "q": "¿Cómo consiguió Los Delfines empatar el partido?",
+                                                "expected": "Hugo recibió un pase de Carmen, regateó a dos rivales y marcó en el minuto 47."
+                        },
+                        {
+                                                "type": "Vocabulario",
+                                                "q": "¿Qué es una tanda de penaltis y por qué hizo falta en esta final?",
+                                                "expected": "Una serie de lanzamientos desde once metros para decidir al ganador; hizo falta porque el partido acabó empatado 1-1."
+                        },
+                        {
+                                                "type": "Valorativo",
+                                                "q": "¿Por qué crees que Pablo dijo que el mérito era de todo el equipo? ¿Estás de acuerdo?",
+                                                "expected": "Reconoce la ayuda de Lara y de sus compañeros (compañerismo, humildad). Vale cualquier opinión justificada con el texto."
+                        }
+                    ]
+                }
+            }
+        };
+
+        /**
+         * Official Andalusian Fluency Reading Benchmarks (PPM - Palabras Por Minuto)
+         * Reference: Orden de 30 de mayo de 2023 & Instrucciones de Lectura de Andalucía.
+         */
+        // Textos de 3.º ampliados (200-250 palabras) con preguntas abiertas
+        Object.assign(TEXTS_DATABASE["3"], {
+    "aventuras": {
+        "title": "La cueva de las gaviotas",
+        "text": [
+            "Aquella mañana de sábado, Marcos y su prima Lola salieron temprano a pasear por la playa de La Barrosa. La marea estaba tan baja que el agua había dejado al descubierto unas rocas oscuras que casi nunca se veían. Los dos primos caminaban despacio, recogiendo conchas y mirando los cangrejos que se escondían entre las algas. [56]",
+            "De pronto, Lola se detuvo y señaló una grieta enorme entre las piedras. Dentro se oía un ruido extraño, como un murmullo suave que subía y bajaba. Marcos sintió un poco de miedo, pero la curiosidad pudo más que él. Encendió la linterna que llevaba en la mochila y entraron juntos, pisando con cuidado la arena mojada. [113]",
+            "La cueva era mucho más grande de lo que parecía desde fuera. En el techo vivían decenas de gaviotas pequeñas que dormían tranquilas, y el murmullo era el sonido de sus alas al moverse. En una esquina, Lola descubrió un nido con tres huevos moteados que brillaban a la luz de la linterna. Los dos se quedaron quietos y en silencio para no asustar a las aves. [180]",
+            "Cuando volvieron a la orilla, Marcos recordó que la marea empezaría a subir enseguida. Salieron corriendo y llegaron a la arena seca justo a tiempo. Esa tarde avisaron a un guarda de la playa, que prometió cuidar la cueva para que nadie molestara a las gaviotas. Marcos y Lola se sintieron orgullosos de su secreto y de haberlo protegido. [239]"
+        ],
+        "questions": [
+            {
+                "type": "Literal",
+                "q": "¿Con quién salió Marcos a pasear y a qué playa fueron?",
+                "expected": "Con su prima Lola, a la playa de La Barrosa."
+            },
+            {
+                "type": "Literal",
+                "q": "¿Qué había dentro de la cueva?",
+                "expected": "Muchas gaviotas pequeñas durmiendo en el techo y un nido con tres huevos."
+            },
+            {
+                "type": "Causal",
+                "q": "¿Por qué se oía un murmullo dentro de la cueva?",
+                "expected": "Porque era el sonido de las alas de las gaviotas al moverse."
+            },
+            {
+                "type": "Inferencial",
+                "q": "¿Por qué salieron corriendo de la cueva?",
+                "expected": "Porque la marea iba a subir y el agua podía dejarlos atrapados."
+            },
+            {
+                "type": "Vocabulario",
+                "q": "¿Qué significa la palabra «orilla» en el texto?",
+                "expected": "El borde de la playa, la zona donde llega el agua del mar."
+            },
+            {
+                "type": "Valorativo",
+                "q": "¿Por qué crees que avisaron al guarda de la playa? ¿Te parece bien?",
+                "expected": "Respuesta razonada: para proteger a las gaviotas y su nido. Se acepta cualquier justificación coherente."
+            }
+        ]
+    },
+    "misterio": {
+        "title": "Las huellas de la clase vacía",
+        "text": [
+            "Todas las mañanas, cuando los niños de 3.ºB entraban en clase, encontraban lo mismo: unas huellas pequeñas de barro que cruzaban el suelo desde la ventana hasta la mesa de la profesora. Nadie sabía quién las dejaba, y la señorita Carmen siempre se reía y decía que debía de ser un fantasma muy sucio. [54]",
+            "Irene y Dani decidieron resolver el misterio. Una tarde se quedaron escondidos detrás del armario, sin hacer ruido, con una libreta y un lápiz. Al principio no pasó nada y Dani empezó a bostezar. Pero, cuando el sol ya se escondía, la ventana se movió despacito y algo diminuto saltó dentro. [105]",
+            "Era un erizo pequeño, con el lomo lleno de púas y la nariz húmeda. Caminó con prisa hasta la mesa de la profesora y se puso a olisquear la bolsa donde ella guardaba su merienda. Irene y Dani contuvieron la risa al ver cómo el animal mordisqueaba un trozo de manzana que se había caído al suelo. [162]",
+            "Al día siguiente contaron el secreto a la señorita Carmen. Entre todos llamaron a un centro de animales, y una veterinaria se llevó al erizo para cuidarlo hasta que llegara el invierno. Desde entonces, Irene y Dani presumen de ser los mejores detectives del colegio. [207]"
+        ],
+        "questions": [
+            {
+                "type": "Literal",
+                "q": "¿Qué encontraban cada mañana los niños de 3.ºB?",
+                "expected": "Huellas de barro desde la ventana hasta la mesa de la profesora."
+            },
+            {
+                "type": "Literal",
+                "q": "¿Dónde se escondieron Irene y Dani?",
+                "expected": "Detrás del armario."
+            },
+            {
+                "type": "Causal",
+                "q": "¿Por qué entraba el erizo en la clase?",
+                "expected": "Buscaba comida: olisqueaba la merienda de la profesora y mordisqueó un trozo de manzana."
+            },
+            {
+                "type": "Inferencial",
+                "q": "¿Por qué crees que la profesora decía que era «un fantasma muy sucio»?",
+                "expected": "Lo decía en broma, porque no sabía quién dejaba las huellas."
+            },
+            {
+                "type": "Vocabulario",
+                "q": "¿Qué son las «púas» del erizo?",
+                "expected": "Las espinas puntiagudas que cubren su lomo."
+            },
+            {
+                "type": "Valorativo",
+                "q": "¿Qué te parece lo que hicieron con el erizo al final?",
+                "expected": "Respuesta razonada: está bien porque una veterinaria lo cuidaría. Se acepta cualquier justificación coherente."
+            }
+        ]
+    },
+    "deportes": {
+        "title": "El partido de la lluvia",
+        "text": [
+            "El sábado se jugaba la gran final entre el colegio La Barrosa y el colegio del pueblo vecino. Nuria, la capitana, se despertó muy nerviosa y se puso la camiseta azul que le traía suerte. Cuando llegaron al campo, el cielo estaba gris y empezaba a caer una lluvia fina. [50]",
+            "Al principio del partido, los charcos hacían que el balón saltara de forma muy rara. Los dos equipos resbalaban y se reían al caerse. El primer gol lo marcaron los del pueblo vecino, y los niños de La Barrosa bajaron la cabeza. Sin embargo, el entrenador Pablo gritó desde la banda que aún quedaba mucho partido. [106]",
+            "En la segunda parte, Nuria cambió la forma de jugar: pidió que pasaran el balón por el aire para evitar los charcos. La idea funcionó, y Óscar empató con un remate precioso. Quedaban dos minutos cuando un jugador rival se cayó y no podía levantarse. Nuria paró el juego y llamó al árbitro, aunque su equipo tenía el balón. [165]",
+            "Al final perdieron por un gol, pero nadie lloró. Los rivales les dieron las gracias por haber parado el partido, y el árbitro elogió a Nuria delante de todos. Volvieron a casa empapados y felices, pensando que ese día habían ganado algo más importante que una copa. [212]"
+        ],
+        "questions": [
+            {
+                "type": "Literal",
+                "q": "¿Qué equipo marcó primero y qué hizo el entrenador Pablo?",
+                "expected": "Marcó el colegio del pueblo vecino; Pablo gritó que aún quedaba mucho partido."
+            },
+            {
+                "type": "Literal",
+                "q": "¿Qué cambió Nuria en la segunda parte?",
+                "expected": "Pidió pasar el balón por el aire para evitar los charcos."
+            },
+            {
+                "type": "Causal",
+                "q": "¿Por qué paró Nuria el juego al final del partido?",
+                "expected": "Porque un jugador rival se había caído y no podía levantarse."
+            },
+            {
+                "type": "Inferencial",
+                "q": "¿Por qué dice el texto que habían ganado «algo más importante que una copa»?",
+                "expected": "Porque actuaron con compañerismo y deportividad y los elogiaron, aunque perdieron."
+            },
+            {
+                "type": "Vocabulario",
+                "q": "¿Qué significa «empapados»?",
+                "expected": "Muy mojados, calados de agua."
+            },
+            {
+                "type": "Valorativo",
+                "q": "¿Habrías parado tú el juego como Nuria? ¿Por qué?",
+                "expected": "Respuesta razonada. Se acepta cualquier justificación coherente (deportividad u otra postura argumentada)."
+            }
+        ]
+    }
+});
+        // Textos de 4.º ampliados (280-320 palabras) con preguntas abiertas
+        Object.assign(TEXTS_DATABASE["4"], {
+    "aventuras": {
+        "title": "La salina del tesoro dormido",
+        "text": [
+            "Cuando Pilar cumplió nueve años, su abuelo Manuel le prometió una excursión diferente. Una mañana de abril, al amanecer, la llevó en su furgoneta hasta las salinas de Chiclana. El cielo tenía un color rosado, y los estanques parecían espejos enormes donde se reflejaban las nubes. Pilar nunca había visto tantas aves juntas: flamencos, garcetas y cigüeñuelas caminaban despacio sobre el agua poco profunda. [64]",
+            "Su abuelo había trabajado allí de joven, y conocía cada rincón. Mientras caminaban entre montones de sal blanca que brillaban como pequeñas montañas de nieve, le contó que una vez, siendo muy niño, escondió un secreto junto al viejo molino. Pilar se detuvo en seco y le pidió que la llevara enseguida, porque estaba segura de que se trataba de una gran aventura. [127]",
+            "El molino estaba medio derruido y cubierto de hiedra. Su abuelo se arrodilló junto a una piedra con forma de media luna y empezó a apartar la tierra con las manos. Pilar le ayudó con una cuchara de metal que llevaba en la mochila. Tras unos minutos de trabajo, aparecieron los restos de una caja de lata muy oxidada, cerrada con un alambre torcido. [191]",
+            "Dentro había tres canicas de cristal azul, una peonza de madera y una nota doblada con una letra temblorosa de niño. Decía: «Para quien encuentre esto: cuida las salinas, porque aquí vive la magia». El abuelo se quedó callado un momento y se le humedecieron los ojos. Había olvidado por completo aquel escondite de su infancia. [247]",
+            "Pilar tomó las canicas y se las puso en la palma de la mano. Después le propuso a su abuelo dejar dentro de la caja su propio mensaje para el futuro. Escribieron juntos una nota, la guardaron con una concha de la playa y volvieron a enterrarlo todo bajo la piedra con forma de luna. Regresaron a casa en silencio, con el corazón contento y la promesa de volver cada primavera. [318]"
+        ],
+        "questions": [
+            {
+                "type": "Literal",
+                "q": "¿Adónde llevó el abuelo Manuel a Pilar y a qué hora del día?",
+                "expected": "A las salinas de Chiclana, al amanecer."
+            },
+            {
+                "type": "Literal",
+                "q": "¿Qué encontraron enterrado junto al molino?",
+                "expected": "Una caja de lata oxidada con tres canicas azules, una peonza de madera y una nota."
+            },
+            {
+                "type": "Causal",
+                "q": "¿Por qué se humedecieron los ojos del abuelo al leer la nota?",
+                "expected": "Porque se emocionó al recordar su infancia: había olvidado aquel escondite."
+            },
+            {
+                "type": "Inferencial",
+                "q": "¿Por qué crees que Pilar quiso volver a enterrar la caja con un mensaje nuevo?",
+                "expected": "Para continuar la tradición y dejar un recuerdo a quien la encuentre en el futuro."
+            },
+            {
+                "type": "Vocabulario",
+                "q": "¿Qué significa que el molino estaba «derruido»?",
+                "expected": "Que estaba medio caído, en ruinas, destruido en parte."
+            },
+            {
+                "type": "Valorativo",
+                "q": "¿Qué te parece el mensaje de la nota («cuida las salinas»)? ¿Por qué es importante?",
+                "expected": "Respuesta razonada: hay que proteger la naturaleza y los lugares con aves. Se acepta cualquier justificación coherente."
+            }
+        ]
+    },
+    "misterio": {
+        "title": "El baúl del desván",
+        "text": [
+            "En el colegio de Álex y Sara había un desván al que nadie subía desde hacía muchísimos años. Un viernes, mientras buscaban material para una exposición, la conserje les dio permiso para echar un vistazo. La escalera crujía a cada paso, y el aire olía a papel viejo y a madera húmeda. [52]",
+            "Entre cajas llenas de mapas descoloridos y pupitres rotos, Sara descubrió un baúl de color verde cerrado con un candado pequeño. Tenía grabadas unas iniciales: R. M. y el año 1985. Álex lo sacudió con cuidado y notó que algo suave se movía en su interior. Los dos se miraron intrigados, convencidos de que escondía un gran secreto. [110]",
+            "Durante la semana siguiente, intentaron averiguar cómo abrirlo. Preguntaron a los profesores más antiguos, pero nadie recordaba a ningún alumno con esas iniciales. Finalmente, Sara se fijó en que sobre la tapa había un dibujo diminuto de una llave y, debajo, una frase casi borrada: «La clave está donde el sol saluda al recreo». [164]",
+            "Pensaron mucho y, por fin, Álex lo entendió: el sol de la mañana iluminaba primero la esquina del patio donde estaba la fuente. Fueron corriendo allí y, bajo una baldosa suelta, encontraron una llave envuelta en un trapo. Con las manos temblorosas volvieron al desván y abrieron el candado. [213]",
+            "Dentro había fotografías en blanco y negro, un cuaderno de dibujos, una gorra azul y una carta dirigida a «los niños del futuro». En ella, un antiguo alumno llamado Rafael Montes contaba cómo era el colegio en su época y les pedía que no olvidaran jugar mucho. Era una cápsula del tiempo. Al día siguiente, toda la clase decidió preparar otra para dejarla a los niños del año 2050. [282]"
+        ],
+        "questions": [
+            {
+                "type": "Literal",
+                "q": "¿Qué iniciales y qué año estaban grabados en el baúl?",
+                "expected": "Las iniciales R. M. y el año 1985."
+            },
+            {
+                "type": "Literal",
+                "q": "¿Dónde encontraron la llave del candado?",
+                "expected": "Bajo una baldosa suelta, en la esquina del patio donde está la fuente."
+            },
+            {
+                "type": "Causal",
+                "q": "¿Cómo supo Álex dónde estaba la llave?",
+                "expected": "Porque entendió la frase: el sol de la mañana iluminaba primero la esquina de la fuente."
+            },
+            {
+                "type": "Inferencial",
+                "q": "¿Por qué crees que nadie recordaba a Rafael Montes?",
+                "expected": "Porque había pasado mucho tiempo (desde 1985) y los profesores actuales no lo conocieron."
+            },
+            {
+                "type": "Vocabulario",
+                "q": "¿Qué es una «cápsula del tiempo»?",
+                "expected": "Un recipiente con objetos y mensajes que se guarda para que se abra en el futuro."
+            },
+            {
+                "type": "Valorativo",
+                "q": "¿Qué pondrías tú en una cápsula del tiempo para los niños del año 2050?",
+                "expected": "Respuesta libre y razonada. Se acepta cualquier objeto o mensaje con una justificación coherente."
+            }
+        ]
+    },
+    "deportes": {
+        "title": "La regata del río Iro",
+        "text": [
+            "Cada mes de junio, el colegio organizaba una regata de piraguas en el caño del río Iro. Aquel año, Lucía y su amigo Iker iban a competir juntos por primera vez. Habían entrenado durante todo el curso, dos tardes por semana, con su monitor Ramón. Ese sábado se levantaron muy temprano, nerviosos pero decididos. [54]",
+            "En la salida había doce piraguas alineadas. El silbato sonó y todas salieron a la vez, levantando salpicaduras. Lucía, que iba delante, marcaba el ritmo: «¡Un, dos! ¡Un, dos!», gritaba. Iker remaba detrás con fuerza, intentando seguirle el compás. Al principio fueron cuartos, pero en el primer giro ya habían adelantado a dos equipos. [108]",
+            "A mitad del recorrido, ocurrió un problema. El remo de Iker golpeó un tronco sumergido y se partió por la mitad. Iker se quedó con un trozo inútil en las manos. Las demás piraguas pasaban de largo. Lucía miró hacia atrás y vio la cara de desesperación de su amigo, pero no se enfadó: «Tranquilo, remaré yo por los dos y tú guía con la voz», dijo con una sonrisa. [178]",
+            "Remando sola, Lucía avanzaba despacio, y Iker, con la mirada atenta, le avisaba de las corrientes y de las ramas: «¡A la izquierda! ¡Ahora recto!». Poco a poco, un competidor se detuvo para prestarles un remo de repuesto que llevaba atado a su piragua. Gracias a ese gesto pudieron terminar la carrera. [230]",
+            "Llegaron los últimos, pero el público los recibió con aplausos. El monitor Ramón los abrazó y les dijo que había sido la regata más bonita que había visto. Ese día Lucía e Iker entendieron que el verdadero premio no era la medalla, sino saber que podían contar el uno con el otro. [282]"
+        ],
+        "questions": [
+            {
+                "type": "Literal",
+                "q": "¿Cuántas piraguas había en la salida y quién era el monitor de Lucía e Iker?",
+                "expected": "Doce piraguas; el monitor era Ramón."
+            },
+            {
+                "type": "Literal",
+                "q": "¿Qué le pasó al remo de Iker durante la carrera?",
+                "expected": "Golpeó un tronco sumergido y se partió por la mitad."
+            },
+            {
+                "type": "Causal",
+                "q": "¿Por qué pudieron terminar la regata?",
+                "expected": "Porque un competidor se paró y les prestó un remo de repuesto."
+            },
+            {
+                "type": "Inferencial",
+                "q": "¿Por qué crees que el público los recibió con aplausos aunque llegaron los últimos?",
+                "expected": "Porque admiraron su esfuerzo, su compañerismo y no rendirse."
+            },
+            {
+                "type": "Vocabulario",
+                "q": "¿Qué significa que el tronco estaba «sumergido»?",
+                "expected": "Que estaba bajo el agua, hundido."
+            },
+            {
+                "type": "Valorativo",
+                "q": "¿Qué piensas de la actitud de Lucía cuando se rompió el remo? ¿Por qué?",
+                "expected": "Respuesta razonada: fue tranquila y solidaria. Se acepta cualquier justificación coherente."
+            }
+        ]
+    }
+});
+        // Textos de 5.º ampliados (350-400 palabras) con preguntas abiertas
+        Object.assign(TEXTS_DATABASE["5"], {
+    "aventuras": {
+        "title": "El ancla de Sancti Petri",
+        "text": [
+            "Daniel y su hermana Elena llevaban todo el verano soñando con una excursión de buceo en la costa de Sancti Petri. Su padre, que era aficionado al submarinismo, les prometió que ese domingo, si el mar estaba en calma, los llevaría en barca hasta una zona de aguas transparentes. Se levantaron al alba y prepararon las gafas, los tubos y unas aletas que les quedaban un poco grandes. [68]",
+            "Una vez en el mar, el padre apagó el motor y los tres se lanzaron al agua. Bajo la superficie se abría un mundo asombroso: bancos de pececillos plateados, estrellas de mar anaranjadas y pulpos que cambiaban de color para esconderse entre las rocas. Elena, que era la más curiosa, se alejó unos metros siguiendo a una sepia, y fue entonces cuando vio algo extraño asomando de la arena. [137]",
+            "Era una pieza enorme de hierro, cubierta de algas y de pequeños moluscos. Elena llamó con la mano a su hermano y juntos apartaron con cuidado la arena. Poco a poco apareció la forma inconfundible de un ancla antigua, con dos brazos curvos y un travesaño de madera podrida. Su padre se acercó nadando y, al verla, abrió los ojos con asombro dentro de las gafas. [203]",
+            "En lugar de intentar sacarla, el padre les explicó que los objetos hundidos desde hace siglos pueden formar parte del patrimonio histórico y que moverlos podría destruir información valiosa. Tomaron fotografías sin tocar nada y anotaron la posición exacta con ayuda del aparato de navegación de la barca. Al volver al puerto, avisaron al responsable de una asociación de arqueología submarina. [264]",
+            "Unas semanas después, un equipo de especialistas visitó el lugar y confirmó que el ancla pertenecía a un barco mercante de hacía más de trescientos años. Descubrieron también restos de cerámica a pocos metros. El museo de la ciudad invitó a Daniel y a Elena a la inauguración de una pequeña exposición sobre el hallazgo, y sus nombres aparecieron escritos en un cartel junto a una fotografía del ancla. [333]",
+            "Los dos hermanos aprendieron aquel verano que las grandes aventuras no siempre consisten en llevarse un tesoro, sino en descubrirlo, respetarlo y compartirlo con los demás. [359]"
+        ],
+        "questions": [
+            {
+                "type": "Literal",
+                "q": "¿Dónde fueron a bucear Daniel y Elena y con quién?",
+                "expected": "A la costa de Sancti Petri, con su padre."
+            },
+            {
+                "type": "Literal",
+                "q": "¿Qué encontró Elena asomando de la arena?",
+                "expected": "Un ancla antigua de hierro cubierta de algas y moluscos."
+            },
+            {
+                "type": "Causal",
+                "q": "¿Por qué no sacaron el ancla del fondo del mar?",
+                "expected": "Porque moverla podía destruir información valiosa del patrimonio histórico."
+            },
+            {
+                "type": "Inferencial",
+                "q": "¿Qué hicieron para que los especialistas pudieran encontrar el ancla?",
+                "expected": "Hicieron fotos, anotaron la posición exacta y avisaron a una asociación de arqueología submarina."
+            },
+            {
+                "type": "Vocabulario",
+                "q": "¿Qué significa «patrimonio histórico» en el texto?",
+                "expected": "Conjunto de objetos y lugares del pasado que hay que conservar y proteger."
+            },
+            {
+                "type": "Valorativo",
+                "q": "Explica con tus palabras el mensaje del último párrafo. ¿Estás de acuerdo?",
+                "expected": "Las grandes aventuras consisten en descubrir, respetar y compartir. Se acepta cualquier opinión justificada."
+            }
+        ]
+    },
+    "misterio": {
+        "title": "La luz del castillo",
+        "text": [
+            "Desde hacía dos semanas, los vecinos de la playa de La Barrosa comentaban lo mismo: por las noches, una luz verde parpadeaba en lo alto del castillo de Sancti Petri. Unos decían que eran contrabandistas, otros hablaban del fantasma de un antiguo soldado, y el panadero juraba haberla visto moverse como si alguien caminara con una linterna por las murallas. [60]",
+            "Irene y su primo Hugo, que pasaban allí las vacaciones, decidieron averiguar la verdad. Una noche sin luna, se sentaron en la arena con unos prismáticos prestados y una libreta para apuntar cada detalle. A las once y diez, justo como habían dicho los vecinos, la luz verde apareció. Parpadeó cuatro veces, se apagó y volvió a encenderse unos minutos más tarde en otro lugar del edificio. [127]",
+            "Al día siguiente investigaron en la biblioteca del pueblo. Descubrieron que el castillo no tenía electricidad y que estaba prohibido visitarlo de noche. Entonces, ¿quién podía estar allí? Revisaron los periódicos de los últimos días y, en una pequeña noticia casi escondida, leyeron que un grupo de biólogos estudiaba los murciélagos de la zona. [181]",
+            "Aquella noche volvieron a la playa y, esta vez, Hugo se fijó en algo: la luz solo se encendía cuando pasaba por delante de ella una nube de insectos. Irene lo comprendió de inmediato. Los científicos usaban una lámpara especial para atraer insectos y así observar a los murciélagos que se acercaban a cazarlos, y por eso la luz parpadeaba y cambiaba de sitio. [245]",
+            "Para confirmarlo, escribieron una carta a la universidad. Una semana más tarde recibieron respuesta de una bióloga llamada Marta, que les agradecía su curiosidad y les confirmaba la teoría. Incluso los invitaba a una charla sobre murciélagos en el colegio. [285]",
+            "Los vecinos se quedaron muy sorprendidos al conocer la explicación, y el panadero tuvo que reconocer que no había ningún fantasma. Irene y Hugo, en cambio, se sintieron orgullosos: habían resuelto el misterio sin salir de la playa, gracias a observar con atención, comprobar los datos y no dejarse llevar por los rumores. [338]"
+        ],
+        "questions": [
+            {
+                "type": "Literal",
+                "q": "¿Qué decían los vecinos que era la luz verde del castillo?",
+                "expected": "Unos decían que eran contrabandistas y otros, el fantasma de un antiguo soldado."
+            },
+            {
+                "type": "Literal",
+                "q": "¿Qué usaron Irene y Hugo para observar la luz desde la playa?",
+                "expected": "Unos prismáticos prestados y una libreta."
+            },
+            {
+                "type": "Causal",
+                "q": "¿Por qué parpadeaba y cambiaba de sitio la luz?",
+                "expected": "Era una lámpara de los biólogos para atraer insectos y observar a los murciélagos."
+            },
+            {
+                "type": "Inferencial",
+                "q": "¿Cómo supo Hugo que la luz tenía relación con los insectos?",
+                "expected": "Se fijó en que solo se encendía cuando pasaba por delante una nube de insectos."
+            },
+            {
+                "type": "Vocabulario",
+                "q": "¿Qué significa que los vecinos comentaban los «rumores»?",
+                "expected": "Que contaban cosas sin pruebas; noticias no comprobadas."
+            },
+            {
+                "type": "Valorativo",
+                "q": "¿Qué te parece cómo resolvieron el misterio Irene y Hugo? ¿Qué aprendieron?",
+                "expected": "Respuesta razonada: observaron, comprobaron datos y no se dejaron llevar por rumores. Se acepta cualquier justificación coherente."
+            }
+        ]
+    },
+    "deportes": {
+        "title": "La carrera de Carmen",
+        "text": [
+            "Carmen siempre llegaba la última en la carrera de campo a través del colegio. Cada otoño, los alumnos de quinto recorrían tres kilómetros por el pinar de la Barrosa, y cada otoño ella acababa con las piernas temblando, la cara roja y la sensación de haber defraudado a todos. Sus compañeros no se reían de ella, pero Carmen sentía que algo no estaba bien. [64]",
+            "Aquel año, decidió cambiar las cosas. Una tarde le contó su preocupación a su abuelo Andrés, que había sido corredor de joven. Él no le prometió que ganaría, sino algo mejor: «Vamos a entrenar poco a poco, y lo único que vas a competir es contra la Carmen de ayer». Esa idea le gustó mucho, porque no dependía de nadie más. [125]",
+            "Empezaron con paseos rápidos de veinte minutos, tres días a la semana. Después alternaron andar y correr, y poco a poco fueron aumentando las distancias. El abuelo anotaba los tiempos en una libreta azul, y cada semana Carmen revisaba sus progresos con una sonrisa. Algunas tardes llovía o se sentía cansada, y entonces su abuelo la animaba: «Un día malo también suma». [187]",
+            "Dos meses después llegó el gran día. Hacía fresco y el pinar olía a resina. Sonó el pistoletazo y todos salieron disparados. Carmen no se dejó llevar por la prisa; mantuvo su ritmo, respirando por la nariz y soltando el aire despacio, justo como había practicado. En el kilómetro dos, una compañera tropezó y Carmen la ayudó a levantarse antes de seguir corriendo. [250]",
+            "Terminó en el puesto catorce de veinte, y su abuelo, esperándola en la meta, le enseñó la libreta con una gran sonrisa. Había mejorado su tiempo del año anterior en casi siete minutos. Carmen no recibió ninguna medalla, pero aquella noche escribió en su diario: «Hoy he ganado la carrera más importante: la mía». [304]",
+            "Desde entonces, Carmen sigue entrenando con su abuelo cada semana, y ya ha animado a otros compañeros a que lo hagan con ella. [327]"
+        ],
+        "questions": [
+            {
+                "type": "Literal",
+                "q": "¿Cuántos kilómetros tenía la carrera de campo a través y por dónde se corría?",
+                "expected": "Tres kilómetros por el pinar de la Barrosa."
+            },
+            {
+                "type": "Literal",
+                "q": "¿En qué puesto terminó Carmen y cuánto mejoró su tiempo?",
+                "expected": "En el puesto catorce de veinte; mejoró casi siete minutos."
+            },
+            {
+                "type": "Causal",
+                "q": "¿Por qué le gustó a Carmen la idea de su abuelo de competir contra «la Carmen de ayer»?",
+                "expected": "Porque no dependía de nadie más; solo tenía que superarse a sí misma."
+            },
+            {
+                "type": "Inferencial",
+                "q": "¿Qué quiere decir el abuelo con «un día malo también suma»?",
+                "expected": "Que, aunque un día salga mal, se sigue avanzando; entrenar siempre cuenta."
+            },
+            {
+                "type": "Vocabulario",
+                "q": "¿Qué significa «campo a través»?",
+                "expected": "Una carrera que se corre por el campo o el monte, no por una pista."
+            },
+            {
+                "type": "Valorativo",
+                "q": "¿Por qué crees que Carmen escribió «hoy he ganado la carrera más importante: la mía»? ¿Estás de acuerdo?",
+                "expected": "Porque se superó a sí misma sin importar el puesto. Se acepta cualquier opinión justificada."
+            }
+        ]
+    }
+});
+        // Preguntas abiertas: el alumno responde en papel; el docente ve la respuesta esperada y valora.
+        // En 3.º-5.º la respuesta esperada es la opción correcta de las preguntas originales.
+        Object.values(TEXTS_DATABASE).forEach(g => Object.values(g).forEach(t => t.questions.forEach(q => {
+            if (q.options) { q.expected = q.options[q.correct]; delete q.options; delete q.correct; }
+        })));
+        const fmtPts = (n) => Number.isInteger(Number(n)) ? String(Number(n)) : Number(n).toFixed(1).replace(".", ",");
+
+        const BENCHMARKS = {
+            "3": { muyBajo: 70, bajo: 85, medio: 100, alto: 115 },
+            "4": { muyBajo: 85, bajo: 100, medio: 115, alto: 130 },
+            "5": { muyBajo: 100, bajo: 115, medio: 130, alto: 145 },
+            "6": { muyBajo: 115, bajo: 130, medio: 145, alto: 160 }
+        };
+
+        class ReadingApp {
+            constructor() {
+                this.currentGrade = "6";
+                this.currentTopic = "aventuras";
+                this.textData = null;
+                
+                // Interactive Words State
+                this.wordsList = [];
+                this.errorWordIndices = new Set();
+                this.lastReadIndex = -1;
+
+                // Error Classification Counters
+                this.errorsCount = {
+                    sub: 0,
+                    omi: 0,
+                    adi: 0,
+                    vac: 0
+                };
+
+                // Timer state
+                this.timerMode = "free"; // "60" or "free"
+                this.timerInterval = null;
+                this.elapsedSeconds = 0;
+                this.isTimerRunning = false;
+                this.timerFinished = false;
+
+                // Quiz State
+                this.quizAnswers = {};
+
+                this.init();
+            }
+
+            init() {
+                this.loadText();
+                this.setTimerMode();
+            }
+
+            newStudent() {
+                document.getElementById("studentName").value = "";
+                this.resetTimer();
+                this.loadText();
+                this.switchTab("reading");
+            }
+
+            changeSelection() {
+                this.currentGrade = document.getElementById("gradeSelect").value;
+                this.currentTopic = document.getElementById("topicSelect").value;
+                this.resetTimer();
+                this.loadText();
+            }
+
+            loadText() {
+                this.textData = TEXTS_DATABASE[this.currentGrade][this.currentTopic];
+                this.errorWordIndices.clear();
+                this.lastReadIndex = -1;
+                this.errorsCount = { sub: 0, omi: 0, adi: 0, vac: 0 };
+                this.quizAnswers = {};
+
+                // Update Category Badges & Headers
+                const topicNames = { aventuras: "Aventuras 🚀", misterio: "Misterio 🔍", deportes: "Deportes ⚽" };
+                document.getElementById("textCategoryBadge").innerText = `${topicNames[this.currentTopic]} - ${this.currentGrade}.º EP`;
+                document.getElementById("textTitleDisplay").innerText = this.textData.title;
+
+                // Process Paragraphs and Words
+                this.renderInteractiveText();
+                this.renderQuizQuestions();
+                this.updateErrorCountersDisplay();
+                this.calculateMetrics();
+            }
+
+            downloadReadingPDF() {
+                if (!window.jspdf) {
+                    alert("No se pudo cargar la librería de PDF. Comprueba la conexión a Internet y recarga la página.");
+                    return;
+                }
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF({ unit: "mm", format: "a4" });
+                const W = 210, H = 297, M = 20, CW = W - 2 * M;
+                const navy = [30, 58, 95], grey = [120, 130, 145];
+                const topicNames = { aventuras: "Aventuras", misterio: "Misterio", deportes: "Deportes" };
+                const data = this.textData;
+                const clean = (t) => t.replace(/\s*\[\d+\]\s*$/, "").trim();
+                const student = (document.getElementById("studentName").value || "").trim();
+                const includeQ = document.getElementById("pdfIncludeQuestions").checked;
+                let y = M;
+
+                const header = () => {
+                    // Guardar el estilo actual para restaurarlo tras dibujar la cabecera (si no, el texto de la página 2 salía en tamaño 9)
+                    const prevSize = doc.getFontSize(), prevFont = doc.getFont(), prevColor = doc.getTextColor();
+                    doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(...grey);
+                    doc.text("CEIP La Barrosa · Evaluación lectora", M, 12);
+                    doc.setDrawColor(220, 226, 234); doc.line(M, 14, W - M, 14);
+                    doc.setFont(prevFont.fontName, prevFont.fontStyle); doc.setFontSize(prevSize); doc.setTextColor(prevColor);
+                };
+                const newPage = () => { doc.addPage(); header(); y = M; };
+                const ensure = (h) => { if (y + h > H - 20) newPage(); };
+
+                header();
+                y = 24;
+                // Datos del alumno
+                doc.setFont("helvetica", "normal"); doc.setFontSize(10); doc.setTextColor(60, 70, 85);
+                doc.text("Nombre:", M, y);
+                if (student) { doc.setFont("helvetica", "bold"); doc.text(student, M + 17, y); doc.setFont("helvetica", "normal"); }
+                else { doc.setDrawColor(150, 160, 175); doc.line(M + 17, y + 0.8, M + 105, y + 0.8); }
+                doc.text("Fecha:", M + 115, y);
+                doc.line(M + 128, y + 0.8, W - M, y + 0.8);
+                y += 12;
+
+                // Título
+                doc.setFont("helvetica", "bold"); doc.setFontSize(9); doc.setTextColor(180, 83, 9);
+                doc.text(`${this.currentGrade}.º DE PRIMARIA · ${topicNames[this.currentTopic].toUpperCase()}`, M, y);
+                y += 8;
+                doc.setFontSize(19); doc.setTextColor(...navy);
+                const titleLines = doc.splitTextToSize(data.title, CW);
+                doc.text(titleLines, M, y);
+                y += titleLines.length * 8 + 4;
+
+                // Texto
+                doc.setFont("helvetica", "normal"); doc.setFontSize(13); doc.setTextColor(20, 20, 20);
+                data.text.forEach((p) => {
+                    const lines = doc.splitTextToSize(clean(p), CW);
+                    lines.forEach((ln) => { ensure(8); doc.text(ln, M, y); y += 8; });
+                    y += 3;
+                });
+
+                // Hoja de preguntas (sin opciones, con líneas para responder)
+                if (includeQ) {
+                    newPage();
+                    doc.setFont("helvetica", "bold"); doc.setFontSize(15); doc.setTextColor(...navy);
+                    doc.text("Preguntas de comprensión", M, y + 4);
+                    doc.setFontSize(10); doc.setFont("helvetica", "normal"); doc.setTextColor(...grey);
+                    doc.text(`${data.title} - Responde con frases completas.`, M, y + 10);
+                    y += 20;
+                    data.questions.forEach((q, i) => {
+                        const ql = doc.splitTextToSize(`${i + 1}. ${q.q}`, CW);
+                        ensure(ql.length * 6 + 33);
+                        doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.setTextColor(20, 20, 20);
+                        doc.text(ql, M, y); y += ql.length * 6 + 1;
+                        doc.setDrawColor(190, 198, 210);
+                        for (let k = 0; k < 3; k++) { doc.line(M + 4, y + 6, W - M, y + 6); y += 9; }
+                        y += 4;
+                    });
+                }
+
+                // Numeración de páginas
+                const total = doc.getNumberOfPages();
+                for (let i = 1; i <= total; i++) {
+                    doc.setPage(i); doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(...grey);
+                    doc.text(`Pág. ${i} de ${total}`, W - M, H - 10, { align: "right" });
+                }
+                doc.save(`lectura_${this.currentGrade}_${this.currentTopic}.pdf`);
+            }
+
+            renderInteractiveText() {
+                const container = document.getElementById("readingTextBox");
+                container.innerHTML = "";
+                this.wordsList = [];
+
+                let wordGlobalIndex = 0;
+
+                this.textData.text.forEach((paragraph, pIdx) => {
+                    const pElem = document.createElement("p");
+                    pElem.className = "mb-4 leading-relaxed flex flex-wrap items-center";
+
+                    // Strip cumulative marker [XX] from text string for tokenization
+                    const cleanParagraph = paragraph.replace(/\s*\[\d+\]\s*$/, "");
+                    const words = cleanParagraph.split(/\s+/);
+
+                    words.forEach((word) => {
+                        const wordSpan = document.createElement("span");
+                        wordSpan.className = "word-token";
+                        wordSpan.innerText = word;
+                        wordSpan.dataset.index = wordGlobalIndex;
+
+                        const currentIndex = wordGlobalIndex;
+                        wordSpan.onclick = () => this.toggleWordError(currentIndex);
+                        wordSpan.ondblclick = (e) => {
+                            e.preventDefault();
+                            this.setLastReadWord(currentIndex);
+                        };
+
+                        pElem.appendChild(wordSpan);
+                        this.wordsList.push({ word, elem: wordSpan });
+                        wordGlobalIndex++;
+                    });
+
+                    // Add Paragraph Cumulative Word Marker
+                    const cumulativeMatch = paragraph.match(/\[(\d+)\]/);
+                    if (cumulativeMatch) {
+                        const countBadge = document.createElement("span");
+                        countBadge.className = "ml-2 text-xs font-bold text-slate-400 bg-slate-200 px-1.5 py-0.5 rounded select-none no-print";
+                        countBadge.innerText = `[${cumulativeMatch[1]}]`;
+                        pElem.appendChild(countBadge);
+                    }
+
+                    container.appendChild(pElem);
+                });
+
+                document.getElementById("textTotalWordsCount").innerText = this.wordsList.length;
+                this.lastReadIndex = -1; // Sin marcar: el docente indica la última palabra leída (o pulsa Finalizar en lectura completa)
+                this.updateWordTokensVisuals();
+            }
+
+            toggleWordError(index) {
+                if (this.errorWordIndices.has(index)) {
+                    this.errorWordIndices.delete(index);
+                } else {
+                    this.errorWordIndices.add(index);
+                }
+                this.updateWordTokensVisuals();
+                this.calculateMetrics();
+            }
+
+            setLastReadWord(index) {
+                this.lastReadIndex = index;
+                this.updateWordTokensVisuals();
+                this.calculateMetrics();
+            }
+
+            updateWordTokensVisuals() {
+                this.wordsList.forEach((item, idx) => {
+                    if (this.errorWordIndices.has(idx)) {
+                        item.elem.classList.add("error");
+                    } else {
+                        item.elem.classList.remove("error");
+                    }
+
+                    if (idx === this.lastReadIndex) {
+                        item.elem.classList.add("last-read");
+                        item.elem.title = "Última palabra leída";
+                    } else {
+                        item.elem.classList.remove("last-read");
+                        item.elem.title = "";
+                    }
+                });
+
+                document.getElementById("wordsReadDisplay").innerText = this.lastReadIndex >= 0 ? this.lastReadIndex + 1 : 0;
+            }
+
+            setTimerMode() {
+                this.timerMode = document.getElementById("timerMode").value;
+                this.resetTimer();
+                if (this.timerMode === "60") {
+                    document.getElementById("timerSubtext").innerText = "Control a 1 minuto (60 segundos)";
+                } else {
+                    document.getElementById("timerSubtext").innerText = "Tiempo de lectura libre acumulado";
+                }
+            }
+
+            startTimer() {
+                if (this.isTimerRunning) return;
+                if (this.timerFinished) return;
+                this.isTimerRunning = true;
+                document.getElementById("btnStartTimer").disabled = true;
+                document.getElementById("btnPauseTimer").disabled = false;
+                document.getElementById("btnFinishTimer").disabled = false;
+
+                this.timerInterval = setInterval(() => {
+                    this.elapsedSeconds++;
+                    this.updateTimerDisplay();
+
+                    if (this.timerMode === "60" && this.elapsedSeconds >= 60) {
+                        this.pauseTimer();
+                        alert("¡Atención! Han transcurrido los 60 segundos de lectura. Por favor, marque la última palabra leída por el alumno/a.");
+                    }
+                }, 1000);
+            }
+
+            pauseTimer() {
+                if (!this.isTimerRunning) return;
+                this.isTimerRunning = false;
+                clearInterval(this.timerInterval);
+                document.getElementById("btnStartTimer").disabled = false;
+                document.getElementById("btnPauseTimer").disabled = true;
+            }
+
+            finishTimer() {
+                if (!this.isTimerRunning && this.elapsedSeconds === 0) return;
+                // Detener el cronómetro
+                this.isTimerRunning = false;
+                clearInterval(this.timerInterval);
+                this.timerFinished = true;
+                document.getElementById("btnStartTimer").disabled = true;
+                document.getElementById("btnPauseTimer").disabled = true;
+                document.getElementById("btnFinishTimer").disabled = true;
+
+                // En lectura completa, si no se marcó la última palabra, se da por leído todo el texto
+                if (this.timerMode === "free" && this.lastReadIndex < 0 && this.wordsList.length > 0) {
+                    this.lastReadIndex = this.wordsList.length - 1;
+                    this.updateWordTokensVisuals();
+                }
+                document.getElementById("timerSubtext").innerText = "Lectura finalizada";
+                this.calculateMetrics();
+            }
+
+            resetTimer() {
+                this.pauseTimer();
+                this.timerFinished = false;
+                document.getElementById("btnStartTimer").disabled = false;
+                document.getElementById("btnPauseTimer").disabled = true;
+                document.getElementById("btnFinishTimer").disabled = true;
+                this.elapsedSeconds = 0;
+                this.updateTimerDisplay();
+                this.calculateMetrics();
+            }
+
+            updateTimerDisplay() {
+                const mins = Math.floor(this.elapsedSeconds / 60);
+                const secs = this.elapsedSeconds % 60;
+                const formatted = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+                document.getElementById("timerDisplay").innerText = formatted;
+                this.calculateMetrics();
+            }
+
+            changeErrorType(type, delta) {
+                if (this.errorsCount[type] + delta >= 0) {
+                    this.errorsCount[type] += delta;
+                    this.updateErrorCountersDisplay();
+                    this.calculateMetrics();
+                }
+            }
+
+            updateErrorCountersDisplay() {
+                document.getElementById("countSub").innerText = this.errorsCount.sub;
+                document.getElementById("countOmi").innerText = this.errorsCount.omi;
+                document.getElementById("countAdi").innerText = this.errorsCount.adi;
+                document.getElementById("countVac").innerText = this.errorsCount.vac;
+
+                const manualErrors = Object.values(this.errorsCount).reduce((a, b) => a + b, 0);
+                const markedWordErrors = this.errorWordIndices.size;
+                const totalErrors = Math.max(manualErrors, markedWordErrors);
+
+                document.getElementById("totalErrorsBadge").innerText = `${totalErrors} error${totalErrors === 1 ? '' : 'es'}`;
+            }
+
+            calculateMetrics() {
+                const wordsRead = this.lastReadIndex >= 0 ? this.lastReadIndex + 1 : 0;
+                const manualErrors = Object.values(this.errorsCount).reduce((a, b) => a + b, 0);
+                const markedWordErrors = this.errorWordIndices.size;
+                const totalErrors = Math.max(manualErrors, markedWordErrors);
+
+                const timeInSec = this.elapsedSeconds > 0 ? this.elapsedSeconds : (this.timerMode === "60" ? 60 : 60);
+
+                // Calculations
+                const grossPpm = Math.round((wordsRead / timeInSec) * 60) || 0;
+                const netWords = Math.max(0, wordsRead - totalErrors);
+                const netPpm = Math.round((netWords / timeInSec) * 60) || 0;
+
+                const accuracyPercent = wordsRead > 0 ? Math.round(((wordsRead - totalErrors) / wordsRead) * 100) : 100;
+                const safeAccuracy = Math.max(0, accuracyPercent);
+
+                // Quiz Score
+                const totalQuizQuestions = this.textData.questions.length;
+                let quizCorrectCount = 0;
+                Object.keys(this.quizAnswers).forEach(qIdx => { quizCorrectCount += Number(this.quizAnswers[qIdx]) || 0; });
+                const compPercent = Math.round((quizCorrectCount / totalQuizQuestions) * 100);
+
+                // Index of Reading Efficiency (IEL) = (PPM Netas * Comprensió%) / 100
+                const ielScore = Math.round((netPpm * compPercent) / 100);
+
+                // Benchmarks Level
+                const gradeBm = BENCHMARKS[this.currentGrade];
+                let levelText = "Medio";
+                let levelColorClass = "text-blue-600";
+
+                if (netPpm < gradeBm.muyBajo) {
+                    levelText = "Muy Bajo";
+                    levelColorClass = "text-red-600";
+                } else if (netPpm < gradeBm.bajo) {
+                    levelText = "Bajo";
+                    levelColorClass = "text-amber-600";
+                } else if (netPpm < gradeBm.medio) {
+                    levelText = "Medio";
+                    levelColorClass = "text-blue-600";
+                } else if (netPpm < gradeBm.alto) {
+                    levelText = "Alto";
+                    levelColorClass = "text-emerald-600";
+                } else {
+                    levelText = "Muy Alto";
+                    levelColorClass = "text-purple-600";
+                }
+
+                // Update Live Panel Stats
+                document.getElementById("livePpmGross").innerText = grossPpm;
+                document.getElementById("livePpmNet").innerText = netPpm;
+                document.getElementById("liveAccuracy").innerText = `${safeAccuracy}%`;
+                
+                const liveLevelElem = document.getElementById("liveLevel");
+                liveLevelElem.innerText = levelText;
+                liveLevelElem.className = `text-xs font-bold block mt-1 ${levelColorClass}`;
+
+                // Update Report Elements
+                this.updateReportPanel({
+                    wordsRead,
+                    totalErrors,
+                    grossPpm,
+                    netPpm,
+                    safeAccuracy,
+                    quizCorrectCount,
+                    quizTotal: totalQuizQuestions,
+                    compPercent,
+                    ielScore,
+                    levelText
+                });
+            }
+
+            renderQuizQuestions() {
+                const container = document.getElementById("quizQuestionsContainer");
+                container.innerHTML = "";
+                document.getElementById("tabQuizCount").textContent = this.textData.questions.length;
+                this.textData.questions.forEach((qObj, idx) => {
+                    const qBox = document.createElement("div");
+                    qBox.className = "bg-slate-50 border border-slate-200 rounded-xl p-4";
+                    const btn = (val, label) => `<button type="button" id="mark_${idx}_${val}" onclick="app.selectQuizAnswer(${idx}, ${val})" class="flex-1 py-2 rounded-lg border text-xs font-bold transition">${label}</button>`;
+                    qBox.innerHTML = `
+                        <span class="text-[10px] font-bold uppercase tracking-wider bg-purple-100 text-purple-800 px-2 py-0.5 rounded">Pregunta ${idx + 1} - Nivel ${qObj.type}</span>
+                        <p class="font-bold text-slate-800 text-sm mt-2 mb-2">${qObj.q}</p>
+                        <div class="bg-emerald-50 border border-emerald-100 rounded-lg p-2.5 mb-3 text-xs text-emerald-900"><strong>Respuesta esperada:</strong> ${qObj.expected}</div>
+                        <div class="flex gap-2">${btn(1, "Correcta")}${btn(0.5, "Parcial")}${btn(0, "Incorrecta")}</div>`;
+                    container.appendChild(qBox);
+                    this.paintMarks(idx);
+                });
+            }
+
+            paintMarks(idx) {
+                const sel = { "1": "bg-emerald-600 text-white border-emerald-600", "0.5": "bg-amber-500 text-white border-amber-500", "0": "bg-red-500 text-white border-red-500" };
+                [1, 0.5, 0].forEach(v => {
+                    const b = document.getElementById(`mark_${idx}_${v}`);
+                    if (!b) return;
+                    const on = this.quizAnswers[idx] === v;
+                    b.className = "flex-1 py-2 rounded-lg border text-xs font-bold transition " + (on ? sel[String(v)] : "bg-white text-slate-600 border-slate-300 hover:bg-slate-100");
+                });
+            }
+
+            selectQuizAnswer(qIndex, value) {
+                if (this.quizAnswers[qIndex] === value) delete this.quizAnswers[qIndex];
+                else this.quizAnswers[qIndex] = value;
+                this.paintMarks(qIndex);
+                this.calculateMetrics();
+            }
+
+            updateReportPanel(data) {
+                this.lastMetrics = data;
+                const name = document.getElementById("studentName").value.trim() || "Alumnado sin registrar";
+                const evaluator = document.getElementById("evaluatorName").value.trim() || "Docente / Tutor";
+                const group = document.getElementById("groupSelect").value;
+                const today = new Date().toLocaleDateString("es-ES");
+
+                document.getElementById("repStudentName").innerText = name;
+                document.getElementById("repGradeGroup").innerText = `${this.currentGrade}.º EP - Grupo ${group}`;
+                document.getElementById("repTextTitle").innerText = this.textData.title;
+                document.getElementById("repEvaluator").innerText = evaluator;
+
+                // Print headers
+                document.querySelectorAll(".reportDatePrint").forEach(e => e.innerText = today);
+                document.querySelectorAll(".reportGradePrint").forEach(e => e.innerText = `${this.currentGrade}.º EP`);
+                document.getElementById("printSigEvaluator").innerText = evaluator;
+
+                // Scores
+                document.getElementById("repPpmNet").innerText = data.netPpm;
+                document.getElementById("repPpmBadge").innerText = data.levelText;
+                document.getElementById("repAccuracy").innerText = `${data.safeAccuracy}%`;
+                document.getElementById("repComp").innerText = `${data.compPercent}%`;
+                document.getElementById("repCompBadge").innerText = `${fmtPts(data.quizCorrectCount)} / ${data.quizTotal} Aciertos`;
+                document.getElementById("repIEL").innerText = data.ielScore;
+
+                // Quiz Score Badge on Quiz Tab
+                document.getElementById("quizScoreText").innerText = `${fmtPts(data.quizCorrectCount)} / ${data.quizTotal} (${data.compPercent}%)`;
+
+                // Errors Breakdown
+                document.getElementById("repSub").innerText = this.errorsCount.sub;
+                document.getElementById("repOmi").innerText = this.errorsCount.omi;
+                document.getElementById("repAdi").innerText = this.errorsCount.adi;
+                document.getElementById("repVac").innerText = this.errorsCount.vac;
+
+                // Qualitative Description
+                document.getElementById("repQualitativeLevel").innerText = `${data.levelText} (${data.netPpm} PPM Netas)`;
+                let qualDesc = "";
+                if (data.levelText === "Muy Alto" || data.levelText === "Alto") {
+                    qualDesc = `El alumno/a demuestra una fluidez y velocidad lectora óptimas para el nivel de ${this.currentGrade}.º de Primaria. La automatización de la decodificación es adecuada, permitiendo liberar recursos cognitivos para la comprensión.`;
+                } else if (data.levelText === "Medio") {
+                    qualDesc = `El alumno/a alcanza los parámetros estándar de velocidad y precisión lectora establecidos en la normativa andaluza para ${this.currentGrade}.º EP. Mantiene un ritmo constante con pequeños errores puntuales de prosodia.`;
+                } else {
+                    qualDesc = `El alumno/a presenta una velocidad lectora por debajo del umbral recomendado para ${this.currentGrade}.º EP. Se observan dificultades en el reconocimiento directo de palabras y cierta fatiga en lecturas continuadas.`;
+                }
+                document.getElementById("repQualitativeDesc").innerText = qualDesc;
+
+                // Pedagogical Recommendations
+                this.generatePedagogicalRecommendations(data);
+
+                // Highlight active baremo row
+                ["3", "4", "5", "6"].forEach(g => {
+                    const row = document.getElementById(`rowBaremo${g}`);
+                    if (row) {
+                        if (g === this.currentGrade) {
+                            row.className = "bg-blue-100/70 font-bold text-blue-900 border-l-4 border-blue-600";
+                        } else {
+                            row.className = "";
+                        }
+                    }
+                });
+            }
+
+            generatePedagogicalRecommendations(data) {
+                const container = document.getElementById("repPedagogicalRecs");
+                let recsHtml = "";
+
+                if (data.safeAccuracy < 90) {
+                    recsHtml += `<p class="p-2 bg-red-50 rounded border border-red-100 text-red-800"><strong>Refuerzo en Precisión:</strong> Trabajar la lectura guiada con dedo o regla para evitar la omisión y sustitución de sílabas complejas. Practicar actividades de conciencia fonológica y pares mínimos.</p>`;
+                }
+                if (this.errorsCount.vac > 2) {
+                    recsHtml += `<p class="p-2 bg-amber-50 rounded border border-amber-100 text-amber-800"><strong>Trabajo de Prosodia y Silabeo:</strong> Realizar lecturas repetidas modeladas por el docente y lectura en eco para mejorar el ritmo y reducir las pausas indebidas.</p>`;
+                }
+                if (data.compPercent < 60) {
+                    recsHtml += `<p class="p-2 bg-purple-50 rounded border border-purple-100 text-purple-800"><strong>Estrategias de Comprensión Lectora:</strong> Fomentar la relectura de párrafos clave, el subrayado de ideas principales y la formulación de preguntas inferenciales antes, durante y después de la lectura (Programa CCL Andalucía).</p>`;
+                }
+
+                if (recsHtml === "") {
+                    recsHtml = `<p class="p-2 bg-emerald-50 rounded border border-emerald-100 text-emerald-800"><strong>Consolidación y Fomento Lector:</strong> Mantener el plan de lectura personal en el aula y en el hogar. Animar a la lectura autónoma de textos de temática libre (Aventuras, Misterio y Deportes) para afianzar el gusto por la lectura.</p>`;
+                }
+
+                container.innerHTML = recsHtml;
+            }
+
+            switchTab(tabName) {
+                document.getElementById("tabReading").classList.add("hidden");
+                document.getElementById("tabQuiz").classList.add("hidden");
+                document.getElementById("tabReport").classList.add("hidden");
+                document.getElementById("tabSaved").classList.add("hidden");
+                document.getElementById("tabBtnSaved").className = "py-3 px-5 font-medium text-sm text-slate-500 hover:text-slate-700 flex items-center gap-2 rounded-t-lg";
+
+                document.getElementById("tabBtnReading").className = "py-3 px-5 font-medium text-sm text-slate-500 hover:text-slate-700 flex items-center gap-2 rounded-t-lg";
+                document.getElementById("tabBtnQuiz").className = "py-3 px-5 font-medium text-sm text-slate-500 hover:text-slate-700 flex items-center gap-2 rounded-t-lg";
+                document.getElementById("tabBtnReport").className = "py-3 px-5 font-medium text-sm text-slate-500 hover:text-slate-700 flex items-center gap-2 rounded-t-lg";
+
+                if (tabName === "reading") {
+                    document.getElementById("tabReading").classList.remove("hidden");
+                    document.getElementById("tabBtnReading").className = "py-3 px-5 font-bold text-sm border-b-2 border-barrosa-navy text-barrosa-navy flex items-center gap-2 rounded-t-lg bg-white shadow-sm";
+                } else if (tabName === "quiz") {
+                    document.getElementById("tabQuiz").classList.remove("hidden");
+                    document.getElementById("tabBtnQuiz").className = "py-3 px-5 font-bold text-sm border-b-2 border-barrosa-navy text-barrosa-navy flex items-center gap-2 rounded-t-lg bg-white shadow-sm";
+                } else if (tabName === "report") {
+                    document.getElementById("tabReport").classList.remove("hidden");
+                    document.getElementById("tabBtnReport").className = "py-3 px-5 font-bold text-sm border-b-2 border-barrosa-navy text-barrosa-navy flex items-center gap-2 rounded-t-lg bg-white shadow-sm";
+                } else if (tabName === "saved") {
+                    document.getElementById("tabSaved").classList.remove("hidden");
+                    document.getElementById("tabBtnSaved").className = "py-3 px-5 font-bold text-sm border-b-2 border-barrosa-navy text-barrosa-navy flex items-center gap-2 rounded-t-lg bg-white shadow-sm";
+                    Auth.loadSaved();
+                }
+            }
+        }
+
+        // ===== AUTENTICACIÓN Y PRUEBAS GUARDADAS (Supabase) =====
+        const Auth = {
+            sb: null, user: null, rows: [],
+            esc(t) { return String(t ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); },
+            toEmail(u) {
+                u = u.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, "");
+                return u.includes("@") ? u : `${u}@${USER_EMAIL_DOMAIN}`;
+            },
+            showError(msg) { const e = document.getElementById("loginError"); e.innerText = msg; e.classList.toggle("hidden", !msg); },
+
+            async init() {
+                if (/TU-PROYECTO|TU-CLAVE/.test(SUPABASE_URL + SUPABASE_ANON_KEY)) {
+                    this.showError("Falta configurar Supabase: edita SUPABASE_URL y SUPABASE_ANON_KEY en el archivo HTML.");
+                    document.getElementById("loginBtn").disabled = true; return;
+                }
+                if (!window.supabase) {
+                    this.showError("No se pudo cargar Supabase. Comprueba la conexión a Internet y recarga la página.");
+                    document.getElementById("loginBtn").disabled = true; return;
+                }
+                let base;
+                try {
+                    const u = new URL(SUPABASE_URL.trim());
+                    const ref = u.pathname.match(/\/project\/([a-z0-9]+)/i);
+                    // Si se pegó la dirección del panel (supabase.com/dashboard/project/REF), se deduce la URL de la API
+                    base = (u.hostname.endsWith("supabase.com") && ref) ? `https://${ref[1]}.supabase.co` : u.origin;
+                } catch (e) {
+                    this.showError("SUPABASE_URL no es una dirección válida. Debe tener la forma https://xxxx.supabase.co");
+                    document.getElementById("loginBtn").disabled = true; return;
+                }
+                this.sb = window.supabase.createClient(base, SUPABASE_ANON_KEY.trim());
+                const { data } = await this.sb.auth.getSession();
+                this.setUser(data.session ? data.session.user : null);
+                this.sb.auth.onAuthStateChange((_evt, session) => this.setUser(session ? session.user : null));
+            },
+
+            setUser(user) {
+                this.user = user;
+                document.getElementById("loginOverlay").classList.toggle("hidden", !!user);
+                document.getElementById("userBar").classList.toggle("hidden", !user);
+                document.getElementById("userEmail").innerText = user ? user.email.split("@")[0] : "";
+                if (!user) { this.rows = []; document.getElementById("loginPassword").value = ""; }
+            },
+
+            async login(ev) {
+                ev.preventDefault();
+                const btn = document.getElementById("loginBtn");
+                this.showError(""); btn.disabled = true; btn.innerText = "Entrando...";
+                const email = this.toEmail(document.getElementById("loginEmail").value);
+                const { error } = await this.sb.auth.signInWithPassword({
+                    email: email,
+                    password: document.getElementById("loginPassword").value
+                });
+                btn.disabled = false; btn.innerText = "Entrar";
+                if (error) {
+                    const raw = `${error.code || ""} ${error.message || ""}`.toLowerCase();
+                    let msg;
+                    if (raw.includes("email_not_confirmed") || raw.includes("not confirmed")) {
+                        msg = "El usuario existe pero no está confirmado. En Supabase, Authentication > Users, abre el usuario y confírmalo, o créalo de nuevo marcando «Auto Confirm User».";
+                    } else if (raw.includes("api key") || raw.includes("apikey") || error.status === 401) {
+                        msg = "La clave de Supabase (SUPABASE_ANON_KEY) o la URL del archivo no son correctas.";
+                    } else if (raw.includes("invalid_credentials") || raw.includes("invalid login")) {
+                        msg = `Usuario o contraseña incorrectos. (Se ha buscado: ${email})`;
+                    } else {
+                        msg = `No se pudo entrar: ${error.message || "error desconocido"}`;
+                    }
+                    this.showError(msg);
+                }
+            },
+
+            async logout() { await this.sb.auth.signOut(); },
+
+            openPwd() {
+                ["pwdCurrent", "pwdNew", "pwdNew2"].forEach(id => document.getElementById(id).value = "");
+                document.getElementById("pwdError").classList.add("hidden");
+                document.getElementById("pwdOverlay").classList.remove("hidden");
+            },
+            closePwd() { document.getElementById("pwdOverlay").classList.add("hidden"); },
+
+            async changePassword(ev) {
+                ev.preventDefault();
+                const err = document.getElementById("pwdError"), btn = document.getElementById("pwdBtn");
+                const cur = document.getElementById("pwdCurrent").value, n1 = document.getElementById("pwdNew").value, n2 = document.getElementById("pwdNew2").value;
+                const fail = (m) => { err.innerText = m; err.classList.remove("hidden"); };
+                err.classList.add("hidden");
+                if (n1 !== n2) return fail("Las contraseñas nuevas no coinciden.");
+                if (n1.length < 6) return fail("La nueva contraseña debe tener al menos 6 caracteres.");
+                btn.disabled = true;
+                // Comprobar la contraseña actual antes de cambiarla
+                const check = await this.sb.auth.signInWithPassword({ email: this.user.email, password: cur });
+                if (check.error) { btn.disabled = false; return fail("La contraseña actual no es correcta."); }
+                const { error } = await this.sb.auth.updateUser({ password: n1 });
+                btn.disabled = false;
+                if (error) return fail("No se pudo cambiar: " + error.message);
+                this.closePwd();
+                alert("Contraseña cambiada correctamente.");
+            },
+
+            async saveTest() {
+                const m = app.lastMetrics;
+                const name = document.getElementById("studentName").value.trim();
+                if (!name) { alert("Escribe el nombre del alumno/a antes de guardar."); return; }
+                if (!m || m.wordsRead === 0) {
+                    alert("Falta indicar hasta dónde leyó el alumno/a: pulsa «Finalizar» en lectura completa o haz clic en la última palabra leída.");
+                    return;
+                }
+                const top = (BENCHMARKS[app.currentGrade] || {}).alto;
+                if (top && m.grossPpm > top * 1.4 && !confirm(`${m.grossPpm} PPM es una velocidad muy alta para ${app.currentGrade}.º. ¿Seguro que has marcado bien la última palabra leída?`)) return;
+                if (Object.keys(app.quizAnswers).length < m.quizTotal && !confirm("Hay preguntas sin valorar; contarán como incorrectas. ¿Guardar igualmente?")) return;
+                const row = {
+                    student_name: name, grade: parseInt(app.currentGrade, 10),
+                    grp: document.getElementById("groupSelect").value, topic: app.currentTopic,
+                    text_title: app.textData.title, evaluator: document.getElementById("evaluatorName").value.trim() || null,
+                    timer_mode: app.timerMode, elapsed_seconds: app.elapsedSeconds,
+                    words_read: m.wordsRead, total_errors: m.totalErrors,
+                    errors_sub: app.errorsCount.sub, errors_omi: app.errorsCount.omi, errors_adi: app.errorsCount.adi, errors_vac: app.errorsCount.vac,
+                    gross_ppm: m.grossPpm, net_ppm: m.netPpm, accuracy: m.safeAccuracy,
+                    quiz_correct: m.quizCorrectCount, quiz_total: m.quizTotal, comp_percent: m.compPercent, iel: m.ielScore, level: m.levelText,
+                    quiz_answers: app.quizAnswers, marked_errors: [...app.errorWordIndices]
+                };
+                const btn = document.getElementById("btnSaveTest");
+                btn.disabled = true;
+                const { error } = await this.sb.from("pruebas").insert(row);
+                btn.disabled = false;
+                if (error) { alert("No se pudo guardar la prueba: " + error.message); return; }
+                alert("Prueba de " + name + " guardada en tu cuenta.");
+            },
+
+            async loadSaved() {
+                document.getElementById("savedEmpty").innerText = "Cargando...";
+                const { data, error } = await this.sb.from("pruebas").select("*").order("created_at", { ascending: false }).limit(1000);
+                if (error) { document.getElementById("savedEmpty").innerText = "Error al cargar: " + error.message; return; }
+                this.rows = data || [];
+                this.renderSaved();
+            },
+
+            renderSaved() {
+                const q = document.getElementById("savedSearch").value.trim().toLowerCase();
+                const rows = this.rows.filter(r => r.student_name.toLowerCase().includes(q));
+                document.getElementById("savedBody").innerHTML = rows.map(r => `
+                    <tr class="border-b border-slate-100 hover:bg-slate-50">
+                        <td class="px-3 py-2 whitespace-nowrap">${new Date(r.created_at).toLocaleDateString("es-ES")}</td>
+                        <td class="px-3 py-2 font-semibold text-slate-800">${this.esc(r.student_name)}</td>
+                        <td class="px-3 py-2 whitespace-nowrap">${r.grade}.º ${this.esc(r.grp || "")}</td>
+                        <td class="px-3 py-2">${this.esc(r.text_title)}</td>
+                        <td class="px-3 py-2 text-right font-bold">${r.net_ppm}</td>
+                        <td class="px-3 py-2 text-right">${r.accuracy}%</td>
+                        <td class="px-3 py-2 text-right">${r.comp_percent}%</td>
+                        <td class="px-3 py-2">${this.esc(r.level)}</td>
+                        <td class="px-3 py-2 text-right whitespace-nowrap"><button onclick="Auth.downloadReports('${r.id}')" title="Descargar informe PDF" class="text-barrosa-navy hover:opacity-70 mr-3"><i class="fa-solid fa-file-pdf"></i></button><button onclick="Auth.deleteTest('${r.id}')" title="Eliminar" class="text-red-500 hover:text-red-700"><i class="fa-solid fa-trash"></i></button></td>
+                    </tr>`).join("");
+                document.getElementById("savedEmpty").innerText = rows.length ? "" : (this.rows.length ? "Ningún resultado para esa búsqueda." : "Todavía no has guardado ninguna prueba.");
+            },
+
+            async deleteTest(id) {
+                if (!confirm("¿Eliminar esta prueba de forma definitiva?")) return;
+                const { error } = await this.sb.from("pruebas").delete().eq("id", id);
+                if (error) { alert("No se pudo eliminar: " + error.message); return; }
+                this.rows = this.rows.filter(r => r.id !== id);
+                this.renderSaved();
+            },
+
+            // ---------- Informes en PDF de pruebas guardadas ----------
+            reportTexts(r) {
+                let qual;
+                if (r.level === "Muy Alto" || r.level === "Alto") qual = `El alumno/a demuestra una fluidez y velocidad lectora óptimas para el nivel de ${r.grade}.º de Primaria. La automatización de la decodificación es adecuada, permitiendo liberar recursos cognitivos para la comprensión.`;
+                else if (r.level === "Medio") qual = `El alumno/a alcanza los parámetros estándar de velocidad y precisión lectora establecidos en la normativa andaluza para ${r.grade}.º EP. Mantiene un ritmo constante con pequeños errores puntuales de prosodia.`;
+                else qual = `El alumno/a presenta una velocidad lectora por debajo del umbral recomendado para ${r.grade}.º EP. Se observan dificultades en el reconocimiento directo de palabras y cierta fatiga en lecturas continuadas.`;
+                const recs = [];
+                if (r.accuracy < 90) recs.push(["Refuerzo en precisión", "Trabajar la lectura guiada con dedo o regla para evitar la omisión y sustitución de sílabas complejas. Practicar actividades de conciencia fonológica y pares mínimos."]);
+                if (r.errors_vac > 2) recs.push(["Prosodia y silabeo", "Realizar lecturas repetidas modeladas por el docente y lectura en eco para mejorar el ritmo y reducir las pausas indebidas."]);
+                if (r.comp_percent < 60) recs.push(["Estrategias de comprensión lectora", "Fomentar la relectura de párrafos clave, el subrayado de ideas principales y la formulación de preguntas inferenciales antes, durante y después de la lectura."]);
+                if (!recs.length) recs.push(["Consolidación y fomento lector", "Mantener el plan de lectura personal en el aula y en el hogar. Animar a la lectura autónoma de textos de temática libre para afianzar el gusto por la lectura."]);
+                return { qual, recs };
+            },
+
+            drawReport(doc, r) {
+                const W = 210, H = 297, M = 18, CW = W - 2 * M;
+                const navy = [30, 58, 95], grey = [110, 120, 135];
+                const topicNames = { aventuras: "Aventuras", misterio: "Misterio", deportes: "Deportes" };
+                const date = new Date(r.created_at).toLocaleDateString("es-ES");
+                const mmss = `${Math.floor((r.elapsed_seconds || 0) / 60)}:${String((r.elapsed_seconds || 0) % 60).padStart(2, "0")}`;
+                let y = 0;
+                const header = () => {
+                    doc.setFillColor(...navy); doc.rect(0, 0, W, 22, "F");
+                    doc.setFont("helvetica", "bold"); doc.setFontSize(14); doc.setTextColor(255, 255, 255);
+                    doc.text("Informe de Evaluación Lectora", M, 13);
+                    doc.setFont("helvetica", "normal"); doc.setFontSize(9);
+                    doc.text("CEIP La Barrosa · Chiclana de la Frontera", W - M, 13, { align: "right" });
+                    y = 32;
+                };
+                const ensure = (h) => { if (y + h > H - 14) { doc.addPage(); header(); } };
+                const section = (t) => {
+                    ensure(14); doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.setTextColor(...navy);
+                    doc.text(t.toUpperCase(), M, y); doc.setDrawColor(200, 208, 220); doc.line(M, y + 1.8, W - M, y + 1.8); y += 8;
+                };
+                const para = (t, size = 10, bold = false) => {
+                    doc.setFont("helvetica", bold ? "bold" : "normal"); doc.setFontSize(size); doc.setTextColor(30, 30, 30);
+                    doc.splitTextToSize(t, CW).forEach(l => { ensure(5.5); doc.text(l, M, y); y += 5.2; });
+                };
+
+                header();
+                // Datos generales
+                doc.setFillColor(238, 242, 247); doc.roundedRect(M, y - 5, CW, 31, 2, 2, "F");
+                const info = [["Alumno/a", r.student_name], ["Curso y grupo", `${r.grade}.º EP - Grupo ${r.grp || "-"}`], ["Texto", `${r.text_title} (${topicNames[r.topic] || r.topic})`], ["Fecha", date], ["Docente", r.evaluator || "-"], ["Lectura", `${r.words_read} palabras en ${mmss} min`]];
+                info.forEach((it, i) => {
+                    const x = M + 4 + (i % 2) * (CW / 2), yy = y + Math.floor(i / 2) * 9.5;
+                    doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(...grey); doc.text(it[0].toUpperCase(), x, yy);
+                    doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.setTextColor(20, 20, 20);
+                    doc.text(doc.splitTextToSize(String(it[1]), CW / 2 - 8)[0], x, yy + 4.2);
+                });
+                y += 38;
+
+                // Métricas
+                section("Resultados");
+                const cells = [["PPM netas", r.net_ppm], ["PPM brutas", r.gross_ppm], ["Precisión", `${r.accuracy}%`], ["Comprensión", `${r.comp_percent}%  (${fmtPts(r.quiz_correct)}/${r.quiz_total || 5})`], ["Índice eficiencia", r.iel], ["Nivel lector", r.level]];
+                const cw = (CW - 8) / 3;
+                cells.forEach((c, i) => {
+                    const x = M + (i % 3) * (cw + 4), yy = y + Math.floor(i / 3) * 22;
+                    doc.setDrawColor(200, 208, 220); doc.roundedRect(x, yy, cw, 18, 2, 2, "S");
+                    doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(...grey); doc.text(c[0].toUpperCase(), x + 4, yy + 6);
+                    doc.setFont("helvetica", "bold"); doc.setFontSize(14); doc.setTextColor(...navy); doc.text(String(c[1]), x + 4, yy + 14);
+                });
+                y += 46;
+
+                // Errores
+                section("Análisis de errores de lectura");
+                para(`Total de errores: ${r.total_errors}   ·   Sustituciones: ${r.errors_sub}   ·   Omisiones: ${r.errors_omi}   ·   Adiciones: ${r.errors_adi}   ·   Vacilaciones: ${r.errors_vac}`);
+                y += 4;
+
+                // Valoración y orientaciones
+                const t = this.reportTexts(r);
+                section("Valoración cualitativa");
+                para(`${r.level} (${r.net_ppm} PPM netas)`, 10, true);
+                para(t.qual);
+                y += 4;
+                section("Orientaciones pedagógicas");
+                t.recs.forEach(rc => { para(rc[0], 10, true); para(rc[1]); y += 1.5; });
+                y += 3;
+
+                // Comprensión
+                const qs = (TEXTS_DATABASE[r.grade] && TEXTS_DATABASE[r.grade][r.topic]) ? TEXTS_DATABASE[r.grade][r.topic].questions : [];
+                if (qs.length && r.quiz_total === qs.length) {
+                    section("Detalle de comprensión lectora");
+                    const lab = { "1": ["Correcta", [5, 122, 85]], "0.5": ["Parcial", [180, 110, 10]], "0": ["Incorrecta", [185, 28, 28]] };
+                    qs.forEach((q, i) => {
+                        const a = r.quiz_answers ? r.quiz_answers[i] : undefined;
+                        const l = a === undefined ? ["Sin valorar", grey] : lab[String(a)];
+                        ensure(20);
+                        para(`${i + 1}. ${q.q}`, 9.5, true);
+                        doc.setFont("helvetica", "bold"); doc.setFontSize(9); doc.setTextColor(...l[1]);
+                        doc.text(`Valoración: ${l[0]}`, M + 4, y); y += 4.8;
+                        doc.setFont("helvetica", "normal"); doc.setTextColor(...grey);
+                        doc.splitTextToSize(`Respuesta esperada: ${q.expected}`, CW - 4).forEach(t => { ensure(5); doc.text(t, M + 4, y); y += 4.5; });
+                        y += 2;
+                    });
+                }
+
+                // Firma
+                ensure(14);
+                doc.setDrawColor(150, 160, 175); doc.line(W - M - 60, y + 5, W - M, y + 5);
+                doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(...grey);
+                doc.text(r.evaluator || "Docente / Tutor", W - M - 30, y + 9.5, { align: "center" });
+            },
+
+            downloadReports(id) {
+                if (!window.jspdf) { alert("No se pudo cargar la librería de PDF. Comprueba la conexión a Internet y recarga la página."); return; }
+                let rows;
+                if (id) rows = this.rows.filter(r => r.id === id);
+                else {
+                    const q = document.getElementById("savedSearch").value.trim().toLowerCase();
+                    rows = this.rows.filter(r => r.student_name.toLowerCase().includes(q)).reverse();
+                    if (!rows.length) { alert("No hay pruebas para generar informes."); return; }
+                    if (rows.length > 1 && !confirm(`Se generará un único PDF con ${rows.length} informes (uno por página o más). ¿Continuar?`)) return;
+                }
+                const doc = new window.jspdf.jsPDF({ unit: "mm", format: "a4" });
+                rows.forEach((r, i) => { if (i > 0) doc.addPage(); this.drawReport(doc, r); });
+                const total = doc.getNumberOfPages();
+                for (let i = 1; i <= total; i++) { doc.setPage(i); doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(130, 140, 155); doc.text(`Pág. ${i} de ${total}`, 105, 290, { align: "center" }); }
+                const slug = (t) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_|_$/g, "").toLowerCase();
+                doc.save(rows.length === 1 ? `informe_${slug(rows[0].student_name)}_${rows[0].created_at.slice(0, 10)}.pdf` : "informes_lectores.pdf");
+            },
+
+            exportCSV() {
+                if (!this.rows.length) { alert("No hay pruebas para exportar."); return; }
+                const cols = [["created_at", "Fecha"], ["student_name", "Alumno/a"], ["grade", "Curso"], ["grp", "Grupo"], ["text_title", "Texto"], ["evaluator", "Docente"],
+                    ["elapsed_seconds", "Segundos"], ["words_read", "Palabras leídas"], ["total_errors", "Errores"], ["errors_sub", "Sustituciones"], ["errors_omi", "Omisiones"],
+                    ["errors_adi", "Adiciones"], ["errors_vac", "Vacilaciones"], ["gross_ppm", "PPM brutas"], ["net_ppm", "PPM netas"], ["accuracy", "Precisión %"],
+                    ["quiz_correct", "Aciertos"], ["comp_percent", "Comprensión %"], ["iel", "IEL"], ["level", "Nivel"]];
+                const cell = v => `"${String(v ?? "").replace(/"/g, '""')}"`;
+                const lines = [cols.map(c => cell(c[1])).join(";")].concat(this.rows.map(r =>
+                    cols.map(c => cell(c[0] === "created_at" ? new Date(r[c[0]]).toLocaleDateString("es-ES") : r[c[0]])).join(";")));
+                const blob = new Blob(["\ufeff" + lines.join("\n")], { type: "text/csv;charset=utf-8" });
+                const a = document.createElement("a");
+                a.href = URL.createObjectURL(blob); a.download = "pruebas_lectoras.csv"; a.click();
+                URL.revokeObjectURL(a.href);
+            }
+        };
+
+        // Initialize App on DOM Load
+        let app;
+        window.onload = function() {
+            app = new ReadingApp();
+            Auth.init();
+        };
+    </script>
+</body>
+</html>
